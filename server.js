@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 
 import { listArticles, getArticle, saveArticle, deleteArticle, buildTree, slugify } from "./lib/articles.js";
 import { renderMarkdown, extractFirstHeading, extractExcerpt } from "./lib/render.js";
+import { ADAPTER, exportData, importData } from "./lib/storage.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CONTENT_DIR = path.join(__dirname, "content");
@@ -54,6 +55,7 @@ const layout = (title, body, active = "") => `<!doctype html>
     <div class="topbar-right">
       <a href="/timeline" class="btn btn-ghost btn-sm">Timeline</a>
       <a href="/uploads" class="btn btn-ghost btn-sm">Media</a>
+      <a href="/data" class="btn btn-ghost btn-sm">Data</a>
       <a href="/new" class="btn btn-primary btn-sm">+ New article</a>
     </div>
   </div>
@@ -90,6 +92,8 @@ function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 }
 
+const adapterLabels = { files: "Local files (content/*.md)", supabase: "Supabase (Postgres)", vercel: "Vercel Postgres" };
+
 function toDate(iso) {
   if (!iso) return "";
   const d = new Date(iso);
@@ -97,9 +101,9 @@ function toDate(iso) {
   return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
-app.get("/", (req, res) => {
-  const tree = buildTree();
-  const articles = listArticles().sort((a, b) => (b.updated || b.created || "").localeCompare(a.updated || a.created || ""));
+app.get("/", async (req, res) => {
+  const tree = await buildTree();
+  const articles = (await listArticles()).sort((a, b) => (b.updated || b.created || "").localeCompare(a.updated || a.created || ""));
   const recent = articles.slice(0, 8);
   const body = `
 <section class="hero">
@@ -122,9 +126,9 @@ ${recent.map((a) => `<a class="card" href="/${a.slug}">
   res.send(layout("Personal Wiki", body, treeHtml(tree)));
 });
 
-app.get("/new", (req, res) => {
-  const tree = buildTree();
-  const parent = req.query.parent ? getArticle(req.query.parent) : null;
+app.get("/new", async (req, res) => {
+  const tree = await buildTree();
+  const parent = req.query.parent ? await getArticle(req.query.parent) : null;
   const body = `
 <section class="editor-wrap">
   <div class="editor-toolbar">
@@ -180,9 +184,9 @@ app.get("/new", (req, res) => {
   res.send(layout("New article", body, treeHtml(tree)));
 });
 
-app.get("/:slug/edit", (req, res) => {
-  const tree = buildTree();
-  const article = getArticle(req.params.slug);
+app.get("/:slug/edit", async (req, res) => {
+  const tree = await buildTree();
+  const article = await getArticle(req.params.slug);
   if (!article) return res.status(404).send(layout("Not found", `<div class="error"><h1>404</h1><p>Article not found.</p><a class="btn btn-primary" href="/new?title=${encodeURIComponent(req.params.slug)}">Create "${escapeHtml(req.params.slug)}"</a></div>`, treeHtml(tree)));
   const body = `
 <section class="editor-wrap">
@@ -240,8 +244,8 @@ app.get("/:slug/edit", (req, res) => {
   res.send(layout(`Edit: ${article.title}`, body, treeHtml(tree)));
 });
 
-app.get("/uploads", (req, res) => {
-  const tree = buildTree();
+app.get("/uploads", async (req, res) => {
+  const tree = await buildTree();
   const files = fs.readdirSync(UPLOAD_DIR).filter((f) => !f.startsWith(".")).map((f) => {
     const p = path.join(UPLOAD_DIR, f);
     const stat = fs.statSync(p);
@@ -280,11 +284,11 @@ app.get("/uploads", (req, res) => {
   res.send(layout("Media library", body, treeHtml(tree)));
 });
 
-app.get("/search", (req, res) => {
+app.get("/search", async (req, res) => {
   const q = (req.query.q || "").trim().toLowerCase();
-  const tree = buildTree();
+  const tree = await buildTree();
   if (!q) return res.redirect("/");
-  const results = listArticles()
+  const results = (await listArticles())
     .filter((a) => a.title.toLowerCase().includes(q) || (a.content || "").toLowerCase().includes(q) || (a.tags || []).some((t) => t.toLowerCase().includes(q)))
     .sort((a, b) => a.title.localeCompare(b.title));
   const body = `
@@ -295,18 +299,18 @@ app.get("/search", (req, res) => {
   res.send(layout(`Search: ${q}`, body, treeHtml(tree)));
 });
 
-app.get("/tags/:tag", (req, res) => {
+app.get("/tags/:tag", async (req, res) => {
   const tag = req.params.tag;
-  const tree = buildTree();
-  const results = listArticles().filter((a) => (a.tags || []).some((t) => t.toLowerCase() === tag.toLowerCase()));
+  const tree = await buildTree();
+  const results = (await listArticles()).filter((a) => (a.tags || []).some((t) => t.toLowerCase() === tag.toLowerCase()));
   const body = `<section><h1>#${escapeHtml(tag)}</h1>
     ${results.length ? `<div class="card-list">${results.map((a) => `<a class="card" href="/${a.slug}"><h3>${escapeHtml(a.title)}</h3><p>${escapeHtml(extractExcerpt(a))}</p></a>`).join("")}</div>` : '<p class="empty">No articles with this tag.</p>'}
   </section>`;
   res.send(layout(`#${tag}`, body, treeHtml(tree)));
 });
 
-app.get("/timeline", (req, res) => {
-  const tree = buildTree();
+app.get("/timeline", async (req, res) => {
+  const tree = await buildTree();
 
   const renderTree = (nodes) => {
     let items = "";
@@ -367,10 +371,50 @@ app.get("/timeline", (req, res) => {
   res.send(layout("Timeline", body, treeHtml(tree)));
 });
 
-app.get("/:slug", (req, res) => {
+app.get("/data", async (req, res) => {
+  const tree = await buildTree();
+  const imported = req.query.imported ? `<div class="toast">✅ Imported ${escapeHtml(req.query.imported)} article(s).</div>` : "";
+  const body = `
+<section class="editor-wrap">
+  <div class="editor-toolbar"><h2>Data & backup</h2><a href="/" class="btn btn-ghost btn-sm">← Home</a></div>
+  ${imported}
+  <p class="hint">Storage adapter: <code>${escapeHtml(ADAPTER)}</code> — ${escapeHtml(adapterLabels[ADAPTER] || adapterLabels.files)}.
+  Set <code>STORAGE_ADAPTER=files|supabase|vercel</code> when starting the server to switch backends.</p>
+
+  <div class="card-list data-cards">
+    <div class="card">
+      <h3>⬇️ Export all data</h3>
+      <p>Download every article as a portable JSON bundle. You can import it back here, into Supabase, or into Vercel.</p>
+      <a href="/api/export" class="btn btn-primary btn-sm">Download JSON</a>
+    </div>
+    <div class="card">
+      <h3>⬆️ Import data</h3>
+      <p>Upload a previously exported JSON bundle to restore or merge articles.</p>
+      <form class="import-form" action="/api/import" method="POST" enctype="multipart/form-data">
+        <input type="file" name="bundle" accept=".json,application/json" required />
+        <button class="btn btn-primary btn-sm" type="submit">Import</button>
+      </form>
+    </div>
+  </div>
+
+  <div class="storage-guide">
+    <h3>How to move to Supabase or Vercel</h3>
+    <ol>
+      <li><strong>Export</strong> your data (button above) to <code>backup.json</code>.</li>
+      <li>In Supabase: open the SQL editor and run <code>supabase/schema.sql</code> to create the <code>articles</code> table.</li>
+      <li>Restart with <code>STORAGE_ADAPTER=supabase</code> plus <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> env vars.</li>
+      <li>Hit <strong>Import</strong> to push your file into Supabase. Everything else works unchanged.</li>
+      <li>On Vercel, install <code>@vercel/postgres</code>, run <code>vercel/schema.sql</code>, set <code>STORAGE_ADAPTER=vercel</code>, and connect your Postgres env.</li>
+    </ol>
+  </div>
+</section>`;
+  res.send(layout("Data & backup", body, treeHtml(tree)));
+});
+
+app.get("/:slug", async (req, res) => {
   const slug = req.params.slug;
-  const tree = buildTree();
-  const article = getArticle(slug);
+  const tree = await buildTree();
+  const article = await getArticle(slug);
   if (!article) {
     const body = `<div class="error"><h1>404</h1><p>"${escapeHtml(slug)}" doesn't exist yet.</p><a class="btn btn-primary" href="/new?title=${encodeURIComponent(slug)}">Create it</a></div>`;
     return res.status(404).send(layout("Not found", body, treeHtml(tree)));
@@ -378,8 +422,8 @@ app.get("/:slug", (req, res) => {
 
   const { html, backlinks, unresolved } = renderMarkdown(article, { tree });
   const kids = tree.find((n) => n.slug === slug)?.children || [];
-  const parent = article.parent ? getArticle(article.parent) : null;
-  const allTags = [...new Set(listArticles().flatMap((a) => a.tags || []))].sort();
+  const parent = article.parent ? await getArticle(article.parent) : null;
+  const allTags = [...new Set((await listArticles()).flatMap((a) => a.tags || []))].sort();
 
   const refBlock = article.reference ? `<div class="reference">
     <a href="${escapeHtml(article.reference)}" target="_blank" rel="noopener">
@@ -415,35 +459,54 @@ app.post("/api/upload", upload.array("files"), (req, res) => {
   res.redirect("/uploads?ok=" + req.files.length);
 });
 
-app.post("/api/articles", (req, res) => {
+app.post("/api/articles", async (req, res) => {
   const { slug: existingSlug, title, parent, tags, reference, referenceLabel, content } = req.body;
   if (!title || !String(title).trim()) return res.status(400).send("Title is required");
   const trimmed = String(content || "").trim().replace(/^\n+/, "").trimStart();
   const meta = { title: String(title).trim(), parent: parent || "", tags, reference: reference || "", referenceLabel: referenceLabel || "" };
-  const article = saveArticle({ existingSlug, meta, content: trimmed });
+  const article = await saveArticle({ existingSlug, meta, content: trimmed });
   res.redirect(`/${article.slug}`);
 });
 
-app.post("/api/articles/:slug/delete", (req, res) => {
-  const kids = listArticles().filter((a) => a.parent === req.params.slug);
+app.post("/api/articles/:slug/delete", async (req, res) => {
+  const kids = (await listArticles()).filter((a) => a.parent === req.params.slug);
   if (kids.length) return res.status(400).send("Cannot delete: it has sub-articles. Remove or re-parent them first.");
-  deleteArticle(req.params.slug);
+  await deleteArticle(req.params.slug);
   res.redirect("/");
 });
 
-app.get("/api/search", (req, res) => {
+app.get("/api/search", async (req, res) => {
   const q = (req.query.q || "").trim().toLowerCase();
   if (q.length < 1) return res.json([]);
-  res.json(listArticles().filter((a) => a.title.toLowerCase().includes(q)).slice(0, 8).map((a) => ({ title: a.title, slug: a.slug })));
+  res.json((await listArticles()).filter((a) => a.title.toLowerCase().includes(q)).slice(0, 8).map((a) => ({ title: a.title, slug: a.slug })));
 });
 
-app.post("/api/branch", (req, res) => {
+app.post("/api/branch", async (req, res) => {
   const { title, parent } = req.body;
   if (!title || !String(title).trim()) return res.status(400).json({ error: "Title is required" });
-  const article = saveArticle({ existingSlug: "", meta: { title: String(title).trim(), parent: parent || "" }, content: "" });
+  const article = await saveArticle({ existingSlug: "", meta: { title: String(title).trim(), parent: parent || "" }, content: "" });
   res.redirect(`/${article.slug}/edit`);
 });
 
-app.use((req, res) => res.status(404).send(layout("Not found", `<div class="error"><h1>404</h1><p>Nothing here.</p><a class="btn btn-primary" href="/">Go home</a></div>`, treeHtml(buildTree()))));
+app.get("/api/export", async (req, res) => {
+  const data = await exportData();
+  res.setHeader("Content-Disposition", 'attachment; filename="aetherwiki-backup.json"');
+  res.type("application/json");
+  res.send(JSON.stringify(data, null, 2));
+});
+
+const bundleUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
+app.post("/api/import", bundleUpload.single("bundle"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).send("Please upload a JSON bundle file.");
+    const parsed = JSON.parse(req.file.buffer.toString("utf8"));
+    const slugs = await importData(parsed);
+    res.redirect(`/data?imported=${slugs.length}`);
+  } catch (err) {
+    res.status(400).send("Import failed: " + err.message);
+  }
+});
+
+app.use(async (req, res) => res.status(404).send(layout("Not found", `<div class="error"><h1>404</h1><p>Nothing here.</p><a class="btn btn-primary" href="/">Go home</a></div>`, treeHtml(await buildTree()))));
 
 app.listen(PORT, () => console.log(`Personal Wiki running at http://localhost:${PORT}`));
