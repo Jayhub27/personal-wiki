@@ -511,6 +511,128 @@ img, video { max-width: 100%; border-radius: 12px; }
 .media-info code { font-size: 0.74rem; overflow-wrap: anywhere; background: transparent; border: none; }
 .media-actions { padding: 0 14px 14px; display: flex; gap: 8px; }
 
+/* ---- Timeline ---- */
+.timeline-wrap { max-width: 860px; margin: 0 auto; }
+.timeline-head { text-align: center; padding: 10px 0 30px; }
+.timeline-head .page-title {
+  font-family: var(--font-display);
+  font-size: clamp(2rem, 5vw, 2.8rem);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin: 0 0 12px;
+  background: var(--accent);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+.timeline-head p { color: var(--muted); max-width: 560px; margin: 0 auto; font-size: 1.02rem; }
+
+.timeline {
+  position: relative;
+  padding-left: 36px;
+}
+.timeline::before {
+  content: "";
+  position: absolute;
+  left: 13px; top: 0; bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg, var(--violet), var(--cyan), var(--violet));
+  border-radius: 2px;
+  box-shadow: 0 0 18px rgba(159, 107, 255, 0.5);
+  opacity: 0.45;
+}
+.tl-node { position: relative; }
+.tl-branch-handle { position: absolute; }
+
+.tl-item {
+  position: relative;
+  margin: 14px 0 18px;
+  opacity: 0;
+  transform: translateY(26px);
+  transition: opacity 0.6s ease var(--delay, 0s), transform 0.6s ease var(--delay, 0s);
+}
+.tl-item.in { opacity: 1; transform: translateY(0); }
+
+.tl-dot {
+  position: absolute;
+  left: -30px; top: 20px;
+  width: 14px; height: 14px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--bg);
+  box-shadow: 0 0 0 3px rgba(159, 107, 255, 0.35), 0 0 22px rgba(159, 107, 255, 0.7);
+  z-index: 2;
+}
+.tl-dot[data-depth="0"] { background: linear-gradient(135deg, var(--violet), var(--cyan)); }
+.tl-dot[data-depth="1"] { background: var(--cyan); box-shadow: 0 0 0 4px rgba(99, 226, 255, 0.25), 0 0 18px rgba(99, 226, 255, 0.6); }
+
+.tl-card {
+  background: var(--bg-2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px 18px;
+  position: relative;
+  transition: border-color 0.18s, transform 0.18s, box-shadow 0.18s;
+}
+.tl-card:hover { border-color: var(--violet); transform: translateX(4px); box-shadow: var(--shadow); }
+.tl-card h3 { margin: 0 0 6px; font-family: var(--font-display); font-size: 1.08rem; }
+.tl-card h3 a { color: var(--text); }
+.tl-card h3 a:hover { color: var(--cyan); }
+.tl-excerpt { color: var(--muted); font-size: 0.86rem; margin-bottom: 12px; }
+
+.tl-actions { display: flex; align-items: center; gap: 8px; }
+.tl-new-btn, .tl-new-add {
+  background: rgba(99, 226, 255, 0.08);
+  border: 1px solid rgba(99, 226, 255, 0.35);
+  color: var(--cyan);
+  border-radius: 9px;
+  padding: 6px 12px;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.tl-new-btn:hover, .tl-new-add:hover { background: rgba(99, 226, 255, 0.18); border-color: var(--cyan); }
+
+.tl-children { margin-left: 26px; padding-left: 8px; position: relative; }
+.tl-children::before {
+  content: "";
+  position: absolute;
+  left: -12px; top: 0; bottom: 0;
+  width: 2px;
+  background: linear-gradient(180deg, rgba(99, 226, 255, 0.4), rgba(159, 107, 255, 0.2));
+  border-radius: 2px;
+}
+
+.tl-form { display: flex; gap: 8px; margin-top: 10px; align-items: center; }
+.tl-form input[type="text"], .tl-form input:not([type]) {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: 9px;
+  padding: 9px 12px;
+  font-size: 0.9rem;
+  outline: none;
+}
+.tl-form input:focus { border-color: var(--cyan); }
+
+.tl-footer-add { margin: 8px 0 30px; }
+.tl-footer-add .tl-form { margin-top: 8px; }
+
+.timeline-legend {
+  display: flex;
+  gap: 18px;
+  justify-content: center;
+  padding: 26px 0 10px;
+  flex-wrap: wrap;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+.lg-root { color: var(--violet); }
+.lg-child { color: var(--cyan); }
+.lg-new { color: var(--pink); }
+
 /* ---- Misc ---- */
 .empty, .empty-tree { color: var(--muted); }
 .error { text-align: center; padding: 70px 0; }

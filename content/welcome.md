@@ -4,8 +4,8 @@ created: 2026-08-06
 updated: 2026-08-06
 tags: meta, guide
 lead: Your personal library. Everything below is a guide — replace it with your own notes.
-reference: https://en.wikipedia.org/wiki/Wiki
-referenceLabel: Wikipedia: Wiki
+reference: https://example.org/wiki/article
+referenceLabel: Read the full article
 ---
 
 This is your **personal library**, draped in an animated aether. It's built around a few simple ideas:

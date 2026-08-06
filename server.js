@@ -52,6 +52,7 @@ const layout = (title, body, active = "") => `<!doctype html>
     <button id="menu-btn" class="icon-btn" aria-label="Toggle navigation">☰</button>
     <a class="brand" href="/"><span class="brand-mark">✦</span> Aetherwiki</a>
     <div class="topbar-right">
+      <a href="/timeline" class="btn btn-ghost btn-sm">Timeline</a>
       <a href="/uploads" class="btn btn-ghost btn-sm">Media</a>
       <a href="/new" class="btn btn-primary btn-sm">+ New article</a>
     </div>
@@ -104,7 +105,7 @@ app.get("/", (req, res) => {
 <section class="hero">
   <span class="chip">✦ your personal library</span>
   <h1>Weave your knowledge<br/>into the aether</h1>
-  <p>Write articles and sub-articles, link pages with <code>[[Wiki Links]]</code>, embed <strong>images</strong>, <strong>video</strong> and <strong>audio</strong>, and branch out to real encyclopedia pages — all in a living, animated space.</p>
+  <p>Turn scattered notes into a living library — write articles, link ideas together, and bring them to life with images, video and audio.</p>
   <div class="hero-actions">
     <a href="/new" class="btn btn-primary">Start writing</a>
     <a href="/uploads" class="btn btn-ghost">Media library</a>
@@ -149,12 +150,12 @@ app.get("/new", (req, res) => {
     </label>
     <div class="editor-meta">
       <label class="field">
-        <span>Reference (optional — link to a real wiki, e.g. Wikipedia)</span>
-        <input name="reference" placeholder="https://en.wikipedia.org/wiki/Coffee" />
+        <span>Reference (optional — link to a real encyclopedia article)</span>
+        <input name="reference" placeholder="https://example.org/wiki/article" />
       </label>
       <label class="field">
         <span>Reference label</span>
-        <input name="referenceLabel" placeholder="Read more on Wikipedia" />
+        <input name="referenceLabel" placeholder="Read the full article" />
       </label>
     </div>
     <label class="field">
@@ -209,11 +210,11 @@ app.get("/:slug/edit", (req, res) => {
     <div class="editor-meta">
       <label class="field">
         <span>Reference URL</span>
-        <input name="reference" placeholder="https://en.wikipedia.org/wiki/…" value="${escapeHtml(article.reference || "")}" />
+        <input name="reference" placeholder="https://example.org/wiki/article" value="${escapeHtml(article.reference || "")}" />
       </label>
       <label class="field">
         <span>Reference label</span>
-        <input name="referenceLabel" placeholder="Read more on Wikipedia" value="${escapeHtml(article.referenceLabel || "")}" />
+        <input name="referenceLabel" placeholder="Read the full article" value="${escapeHtml(article.referenceLabel || "")}" />
       </label>
     </div>
     <label class="field">
@@ -304,6 +305,68 @@ app.get("/tags/:tag", (req, res) => {
   res.send(layout(`#${tag}`, body, treeHtml(tree)));
 });
 
+app.get("/timeline", (req, res) => {
+  const tree = buildTree();
+
+  const renderTree = (nodes) => {
+    let items = "";
+    nodes.forEach((n) => {
+      const kids = n.children.length
+        ? `<div class="tl-children">${renderTree(n.children)}</div>`
+        : "";
+      items += `
+      <div class="tl-node">
+        <div class="tl-branch-handle"></div>
+        <div class="tl-item reveal">
+          <div class="tl-dot" data-depth="${n.depth || 0}"></div>
+          <div class="tl-card">
+            <h3><a href="/${n.slug}">${escapeHtml(n.title)}</a></h3>
+            <div class="tl-excerpt">${escapeHtml(extractExcerpt(n))}</div>
+            <div class="tl-actions">
+              <a href="/${n.slug}" class="btn btn-ghost btn-sm">View</a>
+              <button class="tl-new-btn" data-parent="${n.slug}">+ branch</button>
+            </div>
+            <form class="tl-form hidden" action="/api/branch" method="POST">
+              <input type="hidden" name="parent" value="${n.slug}" />
+              <input name="title" placeholder="Sub-branch title…" required />
+              <button class="btn btn-primary btn-sm" type="submit">Add</button>
+            </form>
+          </div>
+        </div>
+        ${kids}
+      </div>`;
+    });
+    return items;
+  };
+
+  const body = `
+<section class="timeline-wrap">
+  <div class="timeline-head">
+    <h1 class="page-title">The timeline</h1>
+    <p>Trace your ideas as living branches. Click <span class="lg-new">+ branch</span> on any illustration to sprout a new branch or sub-branch beneath it.</p>
+  </div>
+  <div class="timeline-scroll">
+    <div class="timeline">
+      ${tree.length ? `<div class="tl-root">${renderTree(tree)}</div>` : '<div class="empty empty-tl"><p>No branches yet.</p><a class="btn btn-primary" href="/new">Create the first branch</a></div>'}
+      <div class="tl-footer-add">
+        <button class="tl-new-add" data-slug="">+ new root article</button>
+        <form class="tl-form hidden" action="/api" method="POST">
+          <input type="hidden" name="parent" value="" />
+          <input name="title" placeholder="Root article title…" required />
+          <button class="btn btn-primary btn-sm" type="submit">Add</button>
+        </form>
+      </div>
+    </div>
+  </div>
+  <div class="timeline-legend">
+    <span class="lg lg-root">● root</span>
+    <span class="lg lg-child">○ branch</span>
+    <span class="lg lg-new">+ new branch</span>
+  </div>
+</section>`;
+  res.send(layout("Timeline", body, treeHtml(tree)));
+});
+
 app.get("/:slug", (req, res) => {
   const slug = req.params.slug;
   const tree = buildTree();
@@ -372,6 +435,13 @@ app.get("/api/search", (req, res) => {
   const q = (req.query.q || "").trim().toLowerCase();
   if (q.length < 1) return res.json([]);
   res.json(listArticles().filter((a) => a.title.toLowerCase().includes(q)).slice(0, 8).map((a) => ({ title: a.title, slug: a.slug })));
+});
+
+app.post("/api/branch", (req, res) => {
+  const { title, parent } = req.body;
+  if (!title || !String(title).trim()) return res.status(400).json({ error: "Title is required" });
+  const article = saveArticle({ existingSlug: "", meta: { title: String(title).trim(), parent: parent || "" }, content: "" });
+  res.redirect(`/${article.slug}/edit`);
 });
 
 app.use((req, res) => res.status(404).send(layout("Not found", `<div class="error"><h1>404</h1><p>Nothing here.</p><a class="btn btn-primary" href="/">Go home</a></div>`, treeHtml(buildTree()))));

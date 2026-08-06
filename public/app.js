@@ -99,6 +99,34 @@
     });
   });
 
+  // ---- Timeline ----
+  const timelineEl = document.getElementById("timeline");
+
+  // Toggle inline "add branch" forms
+  document.querySelectorAll(".tl-new-btn, .tl-new-add").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const card = btn.closest(".tl-card, .tl-footer-add");
+      const form = card?.querySelector(".tl-form");
+      if (!form) return;
+      const open = !form.classList.contains("hidden");
+      form.classList.toggle("hidden", open);
+      if (!open) form.querySelector("input[name=title]")?.focus();
+    });
+  });
+
+  // Reveal-on-scroll animation for timeline items
+  const reveals = document.querySelectorAll(".timeline .tl-item.reveal");
+  if (reveals.length) {
+    const io = new IntersectionObserver((entries) => {
+      entries.forEach((e) => { if (e.isIntersecting) { e.target.classList.add("in"); io.unobserve(e.target); } });
+    }, { threshold: 0.12 });
+    reveals.forEach((el) => {
+      const depth = parseInt(el.querySelector(".tl-dot")?.dataset.depth || 0, 10);
+      el.style.setProperty("--delay", (depth * 0.08).toFixed(2) + "s");
+      io.observe(el);
+    });
+  }
+
   function escapeHtml(s) {
     return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }

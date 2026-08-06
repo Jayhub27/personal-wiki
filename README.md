@@ -8,7 +8,7 @@ A modern, sleek, self-hosted **personal wiki** draped in an animated aether — 
 - **Glassmorphism UI** — sticky blur topbar, slide-in toc drawer, aurora glows
 - **Articles & sub-articles** — nest related pages under a parent (shown as a tree)
 - **Wiki links** — link any page with `[[Page Title]]`; unresolved links show as red links you can click to create
-- **External references** — attach a URL to a real wiki (e.g. Wikipedia) shown as a glowing reference box
+- **External references** — attach a URL to a real encyclopedia article shown as a glowing reference box
 - **Media library** — upload **images, video and audio**, then embed them with one click
 - **Full-text & instant search**
 - **Backlinks** & **tags** to organize and explore
