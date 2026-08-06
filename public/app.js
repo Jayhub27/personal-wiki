@@ -114,7 +114,27 @@
     });
   });
 
-  // Reveal-on-scroll animation for timeline items
+  // --------------------------------------
+  // Buttons: magnetic hover pull + sheen
+  // --------------------------------------
+  document.querySelectorAll(".btn").forEach((btn) => {
+    btn.classList.add("magnetic");
+    btn.addEventListener("mousemove", (e) => {
+      const r = btn.getBoundingClientRect();
+      const x = (e.clientX - r.left - r.width / 2) / (r.width / 2 || 1);
+      const y = (e.clientY - r.top - r.height / 2) / (r.height / 2 || 1);
+      btn.style.setProperty("--mx", x.toFixed(2));
+      btn.style.setProperty("--my", y.toFixed(2));
+      btn.style.transform = `translate(${x * 5}px, ${y * 7}px)`;
+    });
+    btn.addEventListener("mouseleave", () => {
+      btn.style.transform = "";
+    });
+  });
+
+  // --------------------------------------
+  // Timeline reveal + scroll-linked glow
+  // --------------------------------------
   const reveals = document.querySelectorAll(".timeline .tl-item.reveal");
   if (reveals.length) {
     const io = new IntersectionObserver((entries) => {
@@ -122,9 +142,20 @@
     }, { threshold: 0.12 });
     reveals.forEach((el) => {
       const depth = parseInt(el.querySelector(".tl-dot")?.dataset.depth || 0, 10);
-      el.style.setProperty("--delay", (depth * 0.08).toFixed(2) + "s");
+      el.style.setProperty("--delay", (depth * 0.12).toFixed(2) + "s");
       io.observe(el);
     });
+
+    // "journey highlight" — glow the dot of the item currently under a hover-bound cursor
+    const timeline = document.querySelector(".timeline");
+    timeline?.addEventListener("mousemove", (e) => {
+      reveals.forEach((el) => {
+        const r = el.getBoundingClientRect();
+        const near = Math.abs(e.clientY - (r.top + r.height / 2)) < 90;
+        el.classList.toggle("hover-glow", near);
+      });
+    });
+    timeline?.addEventListener("mouseleave", () => reveals.forEach((el) => el.classList.remove("hover-glow")));
   }
 
   function escapeHtml(s) {
