@@ -1,4 +1,19 @@
 (() => {
+  const menuBtn = document.getElementById("menu-btn");
+  const drawer = document.getElementById("drawer");
+  const scrim = document.getElementById("scrim");
+  if (menuBtn && drawer && scrim) {
+    const close = () => { drawer.classList.remove("open"); scrim.classList.remove("show"); drawer.setAttribute("aria-hidden", "true"); };
+    menuBtn.addEventListener("click", () => {
+      const open = drawer.classList.toggle("open");
+      scrim.classList.toggle("show", open);
+      drawer.setAttribute("aria-hidden", open ? "false" : "true");
+    });
+    scrim.addEventListener("click", close);
+    drawer.querySelectorAll('a').forEach((a) => a.addEventListener("click", close));
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape") close(); });
+  }
+
   const search = document.getElementById("search");
   const results = document.getElementById("search-results");
 

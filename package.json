@@ -23,6 +23,7 @@
   "dependencies": {
     "express": "^5.2.1",
     "marked": "^18.0.9",
-    "multer": "^2.2.0"
+    "multer": "^2.2.0",
+    "three": "^0.185.1"
   }
 }

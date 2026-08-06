@@ -1,16 +1,14 @@
 ---
-title: Welcome to my wiki
+title: Welcome
 created: 2026-08-06
 updated: 2026-08-06
 tags: meta, guide
-lead: Your personal knowledge base. Everything below is an example — replace it with your own notes.
+lead: Your personal library. Everything below is a guide — replace it with your own notes.
 reference: https://en.wikipedia.org/wiki/Wiki
 referenceLabel: Wikipedia: Wiki
 ---
 
-# Welcome 👋
-
-This is your **personal wiki**. It's built around a few simple ideas:
+This is your **personal library**, draped in an animated aether. It's built around a few simple ideas:
 
 - **Articles & sub-articles** — nest related pages under a parent using the *Parent* field.
 - **Wiki links** — link pages by typing `[[Page Title]]`. If a page doesn't exist yet, it shows as a red link and you can create it.
@@ -19,11 +17,10 @@ This is your **personal wiki**. It's built around a few simple ideas:
 
 ## Try it right now
 
-Click these to explore the examples already set up for you:
+Click the links below to see the system in action — they link to pages you can create:
 
-- [[Coffee]] — an article with a sub-article
-- [[Coffee brewing methods]] — a sub-article nested under Coffee
-- [[Coffee history]] — another sub-article
+- [[A place to start]] — your first article
+- [[My first sub-article]] — nest one under it
 
 ## How to write
 

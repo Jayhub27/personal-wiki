@@ -1,17 +1,17 @@
-# 📚 Personal Wiki
+# ✦ Aetherwiki
 
-A modern, sleek, self-hosted wiki for writing articles and sub-articles, linking pages with hyperlinks, referencing real encyclopedia articles, and embedding images, video, and audio.
+A modern, sleek, self-hosted **personal wiki** draped in an animated aether — with a Three.js particle background. Write articles and sub-articles, link pages with hyperlinks, reference real encyclopedia pages, and embed images, video, and audio.
 
 ## ✨ Features
 
-- **Articles & sub-articles** — nest related pages under a parent (shown as a collapse tree in the sidebar)
+- **Animated 3D backdrop** — a Three.js scene of stars, an orbiting wireframe artifact, and an interactive particle ring that follows your cursor
+- **Glassmorphism UI** — sticky blur topbar, slide-in toc drawer, aurora glows
+- **Articles & sub-articles** — nest related pages under a parent (shown as a tree)
 - **Wiki links** — link any page with `[[Page Title]]`; unresolved links show as red links you can click to create
-- **External references** — attach a URL to a real wiki (e.g. Wikipedia) shown as a reference box on the article
+- **External references** — attach a URL to a real wiki (e.g. Wikipedia) shown as a glowing reference box
 - **Media library** — upload **images, video and audio**, then embed them with one click
 - **Full-text & instant search**
-- **Backlinks** — see which pages link to the one you're reading
-- **Tags** — organize and filter articles
-- **Markdown editor** with toolbar buttons and live preview of wiki links
+- **Backlinks** & **tags** to organize and explore
 
 ## 🚀 Run it
 

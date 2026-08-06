@@ -21,6 +21,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use("/uploads", express.static(UPLOAD_DIR));
 app.use(express.static(path.join(__dirname, "public")));
+app.use("/vendor", express.static(path.join(__dirname, "node_modules", "three", "build")));
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -40,25 +41,37 @@ const layout = (title, body, active = "") => `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>${title}</title>
 <link rel="stylesheet" href="/style.css" />
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📚</text></svg>" />
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✦</text></svg>" />
 </head>
 <body>
-<aside class="sidebar">
-  <a class="brand" href="/">📚 Personal Wiki</a>
+<canvas id="bg-canvas" aria-hidden="true"></canvas>
+<div class="aurora aurora-1"></div>
+<div class="aurora aurora-2"></div>
+<header class="topbar">
+  <div class="topbar-inner">
+    <button id="menu-btn" class="icon-btn" aria-label="Toggle navigation">☰</button>
+    <a class="brand" href="/"><span class="brand-mark">✦</span> Aetherwiki</a>
+    <div class="topbar-right">
+      <a href="/uploads" class="btn btn-ghost btn-sm">Media</a>
+      <a href="/new" class="btn btn-primary btn-sm">+ New article</a>
+    </div>
+  </div>
+</header>
+<aside id="drawer" class="drawer" aria-hidden="true">
+  <div class="drawer-head">Table of contents</div>
   <div class="sidebar-search">
-    <input id="search" type="search" placeholder="Search articles…" autocomplete="off" />
+    <input id="search" type="search" placeholder="Search the aether…" autocomplete="off" />
     <div id="search-results" class="search-results hidden"></div>
   </div>
   <nav class="tree">${active}</nav>
-  <div class="sidebar-footer">
-    <a href="/new" class="btn btn-primary btn-block">+ New article</a>
-    <a href="/uploads" class="btn btn-ghost btn-block">Media library</a>
-  </div>
 </aside>
+<div id="scrim" class="scrim" aria-hidden="true"></div>
 <main class="content">
 ${body}
 </main>
 <script src="/app.js"></script>
+<script src="/vendor/three.module.js"></script>
+<script type="module" src="/background.js"></script>
 </body>
 </html>`;
 
@@ -89,15 +102,16 @@ app.get("/", (req, res) => {
   const recent = articles.slice(0, 8);
   const body = `
 <section class="hero">
-  <h1>Welcome to your wiki</h1>
-  <p>Write articles, nest sub-articles, link between pages with <code>[[Wiki Links]]</code>, embed <strong>images</strong>, <strong>video</strong> and <strong>audio</strong>, and link out to real encyclopedia pages.</p>
+  <span class="chip">✦ your personal library</span>
+  <h1>Weave your knowledge<br/>into the aether</h1>
+  <p>Write articles and sub-articles, link pages with <code>[[Wiki Links]]</code>, embed <strong>images</strong>, <strong>video</strong> and <strong>audio</strong>, and branch out to real encyclopedia pages — all in a living, animated space.</p>
   <div class="hero-actions">
     <a href="/new" class="btn btn-primary">Start writing</a>
     <a href="/uploads" class="btn btn-ghost">Media library</a>
   </div>
 </section>
 ${articles.length ? `<section class="card-list">
-<h2>Recent articles</h2>
+<div class="section-title">Recent articles</div>
 ${recent.map((a) => `<a class="card" href="/${a.slug}">
   <h3>${escapeHtml(a.title)}</h3>
   <p>${escapeHtml(extractExcerpt(a))}</p>
@@ -313,12 +327,13 @@ app.get("/:slug", (req, res) => {
   const body = `
 <article class="article">
   <div class="article-meta">
-    <span class="breadcrumb">${parent ? `<a href="/${parent.slug}">${escapeHtml(parent.title)}</a> / ` : "Wiki / "}</span>
+    <span class="breadcrumb">${parent ? `<a href="/${parent.slug}">${escapeHtml(parent.title)}</a> / ` : ""}${escapeHtml(article.title)}</span>
     <span class="updated">${toDate(article.updated || article.created)}</span>
   </div>
   <div class="article-actions">
     <a href="/${article.slug}/edit" class="btn btn-ghost btn-sm">✏️ Edit</a>
   </div>
+  <h1 class="article-title">${escapeHtml(article.title)}</h1>
   ${article.lead ? `<p class="lead">${escapeHtml(article.lead)}</p>` : ""}
   <div class="wiki-body">${html}</div>
   ${refBlock}
