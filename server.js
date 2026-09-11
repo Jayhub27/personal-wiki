@@ -5,12 +5,12 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { listArticles, getArticle, saveArticle, deleteArticle, buildTree, slugify } from "./lib/articles.js";
-import { renderMarkdown, extractFirstHeading, extractExcerpt } from "./lib/render.js";
+import { renderMarkdown, extractExcerpt } from "./lib/render.js";
 import { ADAPTER, exportData, importData } from "./lib/storage.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const CONTENT_DIR = path.join(__dirname, "content");
-const UPLOAD_DIR = path.join(__dirname, "public", "uploads");
+const CONTENT_DIR = process.env.CONTENT_DIR || path.join(__dirname, "content");
+const UPLOAD_DIR = process.env.UPLOAD_DIR || path.join(__dirname, "public", "uploads");
 
 fs.mkdirSync(CONTENT_DIR, { recursive: true });
 fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -35,12 +35,17 @@ const upload = multer({
   limits: { fileSize: 500 * 1024 * 1024 },
 });
 
-const layout = (title, body, active = "") => `<!doctype html>
+const layout = (title, body, active = "", meta = {}) => `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>${title}</title>
+<title>${escapeHtml(title)}</title>
+<meta name="description" content="${escapeHtml(meta.description || "Aetherwiki — a personal wiki draped in an animated aether.")}" />
+<meta property="og:title" content="${escapeHtml(title)}" />
+<meta property="og:description" content="${escapeHtml(meta.description || "A personal wiki draped in an animated aether.")}" />
+<meta property="og:type" content="website" />
+<meta name="twitter:card" content="summary" />
 <link rel="stylesheet" href="/style.css" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✦</text></svg>" />
 </head>
@@ -90,6 +95,11 @@ const treeHtml = (tree, current) => {
 
 function escapeHtml(s) {
   return String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function safeUrl(url) {
+  const value = String(url ?? "").trim();
+  return /^https?:\/\//i.test(value) ? value : "";
 }
 
 const adapterLabels = { files: "Local files (content/*.md)", supabase: "Supabase (Postgres)", vercel: "Vercel Postgres" };
@@ -354,7 +364,7 @@ app.get("/timeline", async (req, res) => {
       ${tree.length ? `<div class="tl-root">${renderTree(tree)}</div>` : '<div class="empty empty-tl"><p>No branches yet.</p><a class="btn btn-primary" href="/new">Create the first branch</a></div>'}
       <div class="tl-footer-add">
         <button class="tl-new-add" data-slug="">+ new root article</button>
-        <form class="tl-form hidden" action="/api" method="POST">
+        <form class="tl-form hidden" action="/api/branch" method="POST">
           <input type="hidden" name="parent" value="" />
           <input name="title" placeholder="Root article title…" required />
           <button class="btn btn-primary btn-sm" type="submit">Add</button>
@@ -411,6 +421,10 @@ app.get("/data", async (req, res) => {
   res.send(layout("Data & backup", body, treeHtml(tree)));
 });
 
+app.get("/health", (req, res) => {
+  res.json({ status: "ok", adapter: ADAPTER, uptime: Math.round(process.uptime()) });
+});
+
 app.get("/:slug", async (req, res) => {
   const slug = req.params.slug;
   const tree = await buildTree();
@@ -425,8 +439,9 @@ app.get("/:slug", async (req, res) => {
   const parent = article.parent ? await getArticle(article.parent) : null;
   const allTags = [...new Set((await listArticles()).flatMap((a) => a.tags || []))].sort();
 
-  const refBlock = article.reference ? `<div class="reference">
-    <a href="${escapeHtml(article.reference)}" target="_blank" rel="noopener">
+  const refUrl = safeUrl(article.reference);
+  const refBlock = refUrl ? `<div class="reference">
+    <a href="${escapeHtml(refUrl)}" target="_blank" rel="noopener noreferrer">
       ${article.referenceLabel ? escapeHtml(article.referenceLabel) : "Read the reference article ↗"}
     </a>
   </div>` : "";
@@ -451,7 +466,7 @@ ${unresolved.length ? `<section class="unresolved"><h2>Unresolved links</h2><p>T
 ${kids.length ? `<section class="sub-articles"><h2>Sub-articles</h2><ul>${kids.map((k) => `<li><a href="/${k.slug}">${escapeHtml(k.title)}</a></li>`).join("")}</ul></section>` : ""}
 ${allTags.length ? `<section class="all-tags"><h2>All tags</h2>${allTags.map((t) => `<a class="tag" href="/tags/${encodeURIComponent(t)}">#${escapeHtml(t)}</a>`).join("")}</section>` : ""}`;
 
-  res.send(layout(article.title, body, treeHtml(tree, slug)));
+  res.send(layout(article.title, body, treeHtml(tree, slug), { description: extractExcerpt(article) || article.title }));
 });
 
 app.post("/api/upload", upload.array("files"), (req, res) => {
@@ -463,7 +478,7 @@ app.post("/api/articles", async (req, res) => {
   const { slug: existingSlug, title, parent, tags, reference, referenceLabel, content } = req.body;
   if (!title || !String(title).trim()) return res.status(400).send("Title is required");
   const trimmed = String(content || "").trim().replace(/^\n+/, "").trimStart();
-  const meta = { title: String(title).trim(), parent: parent || "", tags, reference: reference || "", referenceLabel: referenceLabel || "" };
+  const meta = { title: String(title).trim(), parent: parent || "", tags, reference: safeUrl(reference), referenceLabel: referenceLabel || "" };
   const article = await saveArticle({ existingSlug, meta, content: trimmed });
   res.redirect(`/${article.slug}`);
 });
@@ -509,4 +524,9 @@ app.post("/api/import", bundleUpload.single("bundle"), async (req, res) => {
 
 app.use(async (req, res) => res.status(404).send(layout("Not found", `<div class="error"><h1>404</h1><p>Nothing here.</p><a class="btn btn-primary" href="/">Go home</a></div>`, treeHtml(await buildTree()))));
 
-app.listen(PORT, () => console.log(`Personal Wiki running at http://localhost:${PORT}`));
+const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+  app.listen(PORT, () => console.log(`Personal Wiki running at http://localhost:${PORT}`));
+}
+
+export default app;

@@ -12,6 +12,7 @@ A modern, sleek, self-hosted **personal wiki** draped in an animated aether — 
 - **External references** — attach a URL to a real encyclopedia article shown as a glowing reference box
 - **Media library** — upload **images, video and audio**, then embed them with one click
 - **Full-text & instant search**, **backlinks** & **tags**
+- **Health endpoint** (`GET /health`) and a Node test suite (`npm test`)
 
 ## 🚀 Run it
 
@@ -31,6 +32,11 @@ The wiki ships with an adapter layer (`lib/storage.js`) so you can back it with 
 | Local files (default) | `files` | none |
 | Supabase | `supabase` | `SUPABASE_URL`, `SUPABASE_ANON_KEY` (or service-role) |
 | Vercel Postgres | `vercel` | install `@vercel/postgres`, `DATABASE_URL` |
+
+> [!NOTE]
+> The `vercel` adapter talks to a Vercel/Neon **Postgres** database from the long-running
+> Node server. This app is **not** a serverless function, so it cannot be deployed to Vercel
+> as-is — run `server.js` on a host that keeps a process alive (see the hosting notes).
 
 ```bash
 STORAGE_ADAPTER=supabase SUPABASE_URL=https://<ref>.supabase.co SUPABASE_ANON_KEY=<key> node server.js
