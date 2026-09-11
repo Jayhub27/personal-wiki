@@ -852,6 +852,15 @@ mark { background: rgba(255, 214, 0, 0.32); color: inherit; border-radius: 3px; 
 .graph-node:hover circle { fill: var(--cyan); }
 .graph-node:hover text { fill: var(--text); }
 
+/* ---- Ask the wiki ---- */
+.ask-wrap { max-width: 760px; margin: 0 auto; }
+.ask-form { display: flex; gap: 12px; margin: 18px 0; }
+.ask-form input { flex: 1; background: var(--bg-2); border: 1px solid var(--border); color: var(--text); border-radius: 11px; padding: 12px 14px; font-size: 0.95rem; outline: none; }
+.ask-form input:focus { border-color: var(--violet); }
+.ask-answer { margin-top: 20px; padding: 20px 22px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-2); line-height: 1.7; }
+.ask-sources { margin-top: 18px; padding-top: 14px; border-top: 1px solid var(--border); font-size: 0.85rem; }
+.ask-sources .tags { margin-top: 8px; }
+
 @media (max-width: 640px) {
   .editor-meta { grid-template-columns: 1fr; }
   .hero { padding: 40px 0 30px; }

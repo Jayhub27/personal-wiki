@@ -220,6 +220,21 @@ test("exposes PWA assets and a manifest link", async () => {
   assert.match(await (await fetch(`${base}/`)).text(), /rel="manifest"/);
 });
 
+test("renders the ask page and reports AI as unconfigured", async () => {
+  const page = await fetch(`${base}/ask`);
+  const text = await page.text();
+  assert.equal(page.status, 200);
+  assert.match(text, /Ask the wiki/);
+  assert.match(text, /AI is not configured/);
+  const api = await fetch(`${base}/api/ask`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ question: "anything" }),
+  });
+  assert.equal(api.status, 200);
+  assert.equal((await api.json()).configured, false);
+});
+
 test("moves deleted articles to trash and restores them", async () => {  const { saveArticle } = await import("../lib/articles.js");
   await saveArticle({ existingSlug: "", meta: { title: "Trash Me" }, content: "gone soon" });
   const del = await fetch(`${base}/api/articles/trash-me/delete`, {

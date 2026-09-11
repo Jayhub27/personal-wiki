@@ -12,7 +12,8 @@ import { listArticles, getArticle, saveArticle, deleteArticle, buildTree, slugif
 import { renderMarkdown, extractExcerpt, extractLinks } from "./lib/render.js";
 import { searchArticles, highlight, matchExcerpt } from "./lib/search.js";
 import { ADAPTER, exportData, importData } from "./lib/storage.js";
-import { MEDIA_ADAPTER, uploadStorage, listMedia, saveMedia, removeMedia, streamMedia, kindOf } from "./lib/media.js";
+import { MEDIA_ADAPTER, uploadStorage, listMedia, saveMedia, removeMedia, streamMedia } from "./lib/media.js";
+import { askWiki, aiConfigured } from "./lib/ai.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CONTENT_DIR = process.env.CONTENT_DIR || path.join(__dirname, "content");
@@ -133,7 +134,7 @@ function safeNext(value) {
   return next.startsWith("/") && !next.startsWith("//") ? next : "/";
 }
 
-const OPEN_PATHS = new Set(["/login", "/logout", "/health", "/style.css", "/app.js", "/background.js", "/theme-init.js", "/graph.js", "/sw.js", "/manifest.webmanifest", "/icon.svg"]);
+const OPEN_PATHS = new Set(["/login", "/logout", "/health", "/style.css", "/app.js", "/background.js", "/theme-init.js", "/graph.js", "/ask.js", "/sw.js", "/manifest.webmanifest", "/icon.svg"]);
 const isOpenPath = (pathname) => OPEN_PATHS.has(pathname) || pathname.startsWith("/vendor/");
 
 app.use((req, res, next) => {
@@ -207,6 +208,7 @@ const layout = (title, body, active = "", meta = {}) => {
       <button id="theme-btn" class="icon-btn" type="button" aria-label="Toggle color theme" title="Toggle theme">🌙</button>
       <a href="/timeline" class="btn btn-ghost btn-sm">Timeline</a>
       <a href="/graph" class="btn btn-ghost btn-sm">Graph</a>
+      <a href="/ask" class="btn btn-ghost btn-sm">Ask</a>
       <a href="/uploads" class="btn btn-ghost btn-sm">Media</a>
       <a href="/data" class="btn btn-ghost btn-sm">Data</a>
       <a href="/new" class="btn btn-primary btn-sm">+ New article</a>
@@ -621,6 +623,32 @@ app.get("/tags/:tag", async (req, res) => {
     ${results.length ? `<div class="card-list">${results.map((a) => `<a class="card" href="/${a.slug}"><h3>${escapeHtml(a.title)}</h3><p>${escapeHtml(extractExcerpt(a))}</p></a>`).join("")}</div>` : '<p class="empty">No articles with this tag.</p>'}
   </section>`;
   res.send(layout(`#${tag}`, body, treeHtml(tree)));
+});
+
+app.get("/ask", async (req, res) => {
+  const tree = await buildTree();
+  const body = `
+<section class="ask-wrap">
+  <div class="editor-toolbar"><h2>Ask the wiki</h2><a href="/" class="btn btn-ghost btn-sm">← Home</a></div>
+  ${aiConfigured() ? `<p class="hint">Ask a question — the assistant answers from your articles and cites them.</p>
+  <form id="ask-form" class="ask-form">
+    <input id="ask-input" name="question" placeholder="What do my notes say about…" autocomplete="off" required />
+    <button class="btn btn-primary" type="submit">Ask</button>
+  </form>
+  <div id="ask-answer" class="ask-answer hidden" aria-live="polite"></div>`
+    : `<div class="toast toast-error">AI is not configured. Set <code>AI_API_KEY</code> (optionally <code>AI_API_URL</code>, <code>AI_MODEL</code>) to enable this feature.</div>`}
+</section>`;
+  res.send(layout("Ask the wiki", body, treeHtml(tree), { scripts: ["/ask.js"] }));
+});
+
+app.post("/api/ask", mutationLimiter, async (req, res) => {
+  const question = String((req.body && req.body.question) || "").trim().slice(0, 500);
+  if (!question) return res.status(400).json({ error: "A question is required." });
+  try {
+    res.json(await askWiki(question, await listArticles()));
+  } catch (err) {
+    res.status(502).json({ error: err.message });
+  }
 });
 
 app.get("/graph", async (req, res) => {
