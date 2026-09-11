@@ -35,3 +35,22 @@ drop policy if exists articles_select on public.articles;
 drop policy if exists articles_insert on public.articles;
 drop policy if exists articles_update on public.articles;
 drop policy if exists articles_delete on public.articles;
+
+-- Media index (blobs live in Supabase Storage bucket "media").
+-- Create a PRIVATE bucket named "media" in Storage. The server uploads and
+-- streams objects with the service-role key, so no public policies are needed.
+create table if not exists public.media (
+  name        text primary key,
+  ext         text,
+  kind        text,
+  size        bigint not null default 0,
+  created_at  timestamptz not null default now()
+);
+
+alter table public.media enable row level security;
+alter table public.media force row level security;
+
+drop policy if exists media_select on public.media;
+drop policy if exists media_insert on public.media;
+drop policy if exists media_update on public.media;
+drop policy if exists media_delete on public.media;

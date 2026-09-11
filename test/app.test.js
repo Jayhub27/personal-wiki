@@ -5,6 +5,7 @@ import os from "node:os";
 import path from "node:path";
 
 process.env.CONTENT_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "aetherwiki-"));
+process.env.UPLOAD_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "aetherwiki-media-"));
 process.env.STORAGE_ADAPTER = "files";
 
 const app = (await import("../server.js")).default;
@@ -182,6 +183,23 @@ test("previews markdown via the API", async () => {
   assert.equal(res.status, 200);
   const body = await res.json();
   assert.match(body.html, /<strong>bold<\/strong>/);
+});
+
+test("lists and deletes media", async () => {
+  const up = process.env.UPLOAD_DIR;
+  fs.writeFileSync(path.join(up, "sample.png"), "fake image bytes");
+  const list = await fetch(`${base}/uploads`);
+  const text = await list.text();
+  assert.equal(list.status, 200);
+  assert.match(text, /sample\.png/);
+  const del = await fetch(`${base}/api/media/sample.png/delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: cookie },
+    body: new URLSearchParams({ _csrf: csrf }),
+    redirect: "manual",
+  });
+  assert.equal(del.status, 302);
+  assert.ok(!fs.existsSync(path.join(up, "sample.png")));
 });
 
 test("moves deleted articles to trash and restores them", async () => {  const { saveArticle } = await import("../lib/articles.js");

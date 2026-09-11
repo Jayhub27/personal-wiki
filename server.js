@@ -12,6 +12,7 @@ import { listArticles, getArticle, saveArticle, deleteArticle, buildTree, slugif
 import { renderMarkdown, extractExcerpt } from "./lib/render.js";
 import { searchArticles, highlight, matchExcerpt } from "./lib/search.js";
 import { ADAPTER, exportData, importData } from "./lib/storage.js";
+import { MEDIA_ADAPTER, uploadStorage, listMedia, saveMedia, removeMedia, streamMedia, kindOf } from "./lib/media.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const CONTENT_DIR = process.env.CONTENT_DIR || path.join(__dirname, "content");
@@ -182,13 +183,7 @@ function firstIssue(error) {
 
 const MEDIA_MIME = /^(image|video|audio)\//;
 const upload = multer({
-  storage: multer.diskStorage({
-    destination: UPLOAD_DIR,
-    filename: (_req, file, cb) => {
-      const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
-      cb(null, `${Date.now()}-${safe}`);
-    },
-  }),
+  storage: uploadStorage(),
   limits: { fileSize: 500 * 1024 * 1024, files: 20 },
   fileFilter: (_req, file, cb) => cb(null, MEDIA_MIME.test(file.mimetype)),
 });
@@ -561,13 +556,7 @@ app.post("/api/trash/:id/delete", mutationLimiter, verifyCsrf, async (req, res) 
 
 app.get("/uploads", async (req, res) => {
   const tree = await buildTree();
-  const all = fs.readdirSync(UPLOAD_DIR).filter((f) => !f.startsWith(".")).map((f) => {
-    const p = path.join(UPLOAD_DIR, f);
-    const stat = fs.statSync(p);
-    const ext = path.extname(f).slice(1).toLowerCase();
-    const kind = ["png", "jpg", "jpeg", "gif", "webp", "svg", "avif"].includes(ext) ? "image" : ["mp4", "webm", "mov", "ogg", "m4v"].includes(ext) ? "video" : ["mp3", "wav", "m4a", "flac", "aac"].includes(ext) ? "audio" : "file";
-    return { name: f, size: stat.size, date: stat.mtime, url: `/uploads/${f}`, kind, ext };
-  }).sort((a, b) => b.date - a.date);
+  const all = await listMedia();
   const { items: files, page, pages } = paginate(all, req.query.page, 24);
   const mkItem = (f) => {
     const size = f.size > 1e6 ? `${(f.size / 1e6).toFixed(1)} MB` : `${Math.round(f.size / 1e3)} KB`;
@@ -784,18 +773,26 @@ ${allTags.length ? `<section class="all-tags"><h2>All tags</h2>${allTags.map((t)
   res.send(layout(article.title, body, treeHtml(tree, slug), { description: extractExcerpt(article) || article.title }));
 });
 
-app.post("/api/upload", uploadLimiter, uploadFiles, verifyCsrf, (req, res) => {
+app.post("/api/upload", uploadLimiter, uploadFiles, verifyCsrf, async (req, res) => {
+  try {
+    await saveMedia(req.files);
+  } catch (err) {
+    return res.status(500).send("Upload failed: " + err.message);
+  }
   res.redirect("/uploads?ok=" + req.files.length);
 });
 
-app.post("/api/media/:name/delete", mutationLimiter, verifyCsrf, (req, res) => {
-  const name = path.basename(String(req.params.name || ""));
-  const target = path.join(UPLOAD_DIR, name);
-  if (!name || !target.startsWith(UPLOAD_DIR + path.sep) || !fs.existsSync(target)) {
-    return res.status(404).send("File not found");
-  }
-  fs.unlinkSync(target);
+app.post("/api/media/:name/delete", mutationLimiter, verifyCsrf, async (req, res) => {
+  await removeMedia(req.params.name);
   res.redirect("/uploads");
+});
+
+app.get("/media/:name", async (req, res) => {
+  try {
+    await streamMedia(req.params.name, res);
+  } catch (err) {
+    res.status(500).send("Media error: " + err.message);
+  }
 });
 
 app.post("/api/articles", mutationLimiter, verifyCsrf, async (req, res) => {
