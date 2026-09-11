@@ -19,7 +19,27 @@ A modern, sleek, self-hosted **personal wiki** draped in an animated aether — 
 ```bash
 npm install
 npm start        # http://localhost:3210
+npm test         # Node built-in test runner
 ```
+
+## 🔐 Authentication (optional, recommended)
+
+By default the wiki is open (fine for local use). Set `AUTH_PASSWORD` to require login —
+all pages, APIs and uploads then need a signed session cookie; `/health` stays public.
+
+```bash
+AUTH_USERNAME=admin AUTH_PASSWORD=secret SESSION_SECRET=$(openssl rand -hex 32) npm start
+```
+
+Prefer not to keep a plaintext password in the environment? Generate a hash:
+
+```bash
+node scripts/hash-password.mjs 'your password'    # prints a sha256 hash
+AUTH_PASSWORD_HASH=<hash> SESSION_SECRET=<long-random-string> npm start
+```
+
+Security features: helmet + strict CSP, CSRF-protected mutations, rate limiting,
+`zod` input validation and `sanitize-html` on rendered markdown.
 
 ## 💾 Storage — Supabase or Vercel
 

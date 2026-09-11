@@ -783,6 +783,15 @@ img, video { max-width: 100%; border-radius: 12px; }
 .error p { color: var(--muted); }
 .hidden { display: none !important; }
 
+/* ---- Login ---- */
+.login-wrap { max-width: 420px; margin: 7vh auto 0; }
+.login-wrap .page-title { font-family: var(--font-display); font-size: 2rem; margin: 0 0 10px; }
+.login-sub { color: var(--muted); margin: 0 0 22px; }
+.login-form { gap: 16px; }
+.logout-form { display: inline; }
+.toast-error { background: rgba(248, 81, 73, 0.12); border-color: rgba(248, 81, 73, 0.4); color: #ff8b84; }
+[data-theme="light"] .toast-error { color: #b42318; }
+
 @media (max-width: 640px) {
   .editor-meta { grid-template-columns: 1fr; }
   .hero { padding: 40px 0 30px; }

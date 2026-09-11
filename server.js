@@ -48,9 +48,6 @@ app.use(globalLimiter);
 
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true, limit: "2mb" }));
-app.use("/uploads", express.static(UPLOAD_DIR));
-app.use(express.static(path.join(__dirname, "public")));
-app.use("/vendor", express.static(path.join(__dirname, "node_modules", "three", "build")));
 
 const CSRF_COOKIE = "aetherwiki_csrf";
 const parseCookies = (header = "") => {
@@ -78,6 +75,72 @@ app.use((req, res, next) => {
   res.locals.csrf = token;
   next();
 });
+
+const AUTH_ENABLED = !!(process.env.AUTH_PASSWORD || process.env.AUTH_PASSWORD_HASH);
+const AUTH_USER = process.env.AUTH_USERNAME || "admin";
+const SESSION_COOKIE = "aetherwiki_session";
+const SESSION_TTL = 1000 * 60 * 60 * 24 * 30;
+const SESSION_SECRET = process.env.SESSION_SECRET || (AUTH_ENABLED ? crypto.randomBytes(32).toString("hex") : "");
+if (AUTH_ENABLED && !process.env.SESSION_SECRET) {
+  console.warn("[aetherwiki] AUTH is enabled without SESSION_SECRET — a random secret is used and sessions reset on restart.");
+}
+
+const sha256hex = (value) => crypto.createHash("sha256").update(String(value)).digest("hex");
+const PASSWORD_HASH = process.env.AUTH_PASSWORD_HASH || (process.env.AUTH_PASSWORD ? sha256hex(process.env.AUTH_PASSWORD) : "");
+
+function safeEqual(a, b) {
+  const bufA = Buffer.from(String(a));
+  const bufB = Buffer.from(String(b));
+  if (bufA.length !== bufB.length) return false;
+  return crypto.timingSafeEqual(bufA, bufB);
+}
+
+function signSession(payload) {
+  const data = Buffer.from(JSON.stringify(payload)).toString("base64url");
+  const mac = crypto.createHmac("sha256", SESSION_SECRET).update(data).digest("base64url");
+  return `${data}.${mac}`;
+}
+
+function verifySession(token) {
+  if (!AUTH_ENABLED || !SESSION_SECRET || !token) return null;
+  const [data, mac] = String(token).split(".");
+  if (!data || !mac) return null;
+  const expected = crypto.createHmac("sha256", SESSION_SECRET).update(data).digest("base64url");
+  if (!safeEqual(mac, expected)) return null;
+  try {
+    const payload = JSON.parse(Buffer.from(data, "base64url").toString("utf8"));
+    return payload.exp > Date.now() ? payload : null;
+  } catch {
+    return null;
+  }
+}
+
+function isAuthed(req) {
+  if (!AUTH_ENABLED) return true;
+  return !!verifySession(parseCookies(req.headers.cookie)[SESSION_COOKIE]);
+}
+
+function checkCredentials(username, password) {
+  return safeEqual(username || "", AUTH_USER) && safeEqual(sha256hex(password || ""), PASSWORD_HASH);
+}
+
+function safeNext(value) {
+  const next = String(value || "");
+  return next.startsWith("/") && !next.startsWith("//") ? next : "/";
+}
+
+const OPEN_PATHS = new Set(["/login", "/logout", "/health", "/style.css", "/app.js", "/background.js", "/theme-init.js"]);
+const isOpenPath = (pathname) => OPEN_PATHS.has(pathname) || pathname.startsWith("/vendor/");
+
+app.use((req, res, next) => {
+  if (isAuthed(req) || isOpenPath(req.path)) return next();
+  if (req.path.startsWith("/api/")) return res.status(401).json({ error: "Authentication required" });
+  return res.redirect("/login?next=" + encodeURIComponent(req.originalUrl));
+});
+
+app.use("/uploads", express.static(UPLOAD_DIR));
+app.use(express.static(path.join(__dirname, "public")));
+app.use("/vendor", express.static(path.join(__dirname, "node_modules", "three", "build")));
 
 function verifyCsrf(req, res, next) {
   if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return next();
@@ -127,7 +190,32 @@ const upload = multer({
   limits: { fileSize: 500 * 1024 * 1024 },
 });
 
-const layout = (title, body, active = "", meta = {}) => `<!doctype html>
+const layout = (title, body, active = "", meta = {}) => {
+  const bare = !!meta.bare;
+  const logout = AUTH_ENABLED && !bare
+    ? `<form class="logout-form" action="/logout" method="POST"><button class="btn btn-ghost btn-sm" type="submit">Log out</button></form>`
+    : "";
+  const nav = bare ? "" : `
+      <button id="theme-btn" class="icon-btn" type="button" aria-label="Toggle color theme" title="Toggle theme">🌙</button>
+      <a href="/timeline" class="btn btn-ghost btn-sm">Timeline</a>
+      <a href="/uploads" class="btn btn-ghost btn-sm">Media</a>
+      <a href="/data" class="btn btn-ghost btn-sm">Data</a>
+      <a href="/new" class="btn btn-primary btn-sm">+ New article</a>
+      ${logout}`;
+  const drawer = bare ? "" : `
+<aside id="drawer" class="drawer" aria-hidden="true">
+  <div class="drawer-head">Table of contents</div>
+  <div class="sidebar-search">
+    <input id="search" type="search" placeholder="Search the aether…" autocomplete="off" />
+    <div id="search-results" class="search-results hidden"></div>
+  </div>
+  <nav class="tree">${active}</nav>
+  <div class="drawer-foot">
+    <button id="bg-toggle" class="btn btn-ghost btn-sm" type="button" aria-pressed="true">✦ Animated background</button>
+  </div>
+</aside>
+<div id="scrim" class="scrim" aria-hidden="true"></div>`;
+  return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8" />
@@ -148,29 +236,12 @@ const layout = (title, body, active = "", meta = {}) => `<!doctype html>
 <div class="aurora aurora-2"></div>
 <header class="topbar">
   <div class="topbar-inner">
-    <button id="menu-btn" class="icon-btn" aria-label="Toggle navigation">☰</button>
+    ${bare ? "" : '<button id="menu-btn" class="icon-btn" aria-label="Toggle navigation">☰</button>'}
     <a class="brand" href="/"><span class="brand-mark">✦</span> Aetherwiki</a>
-    <div class="topbar-right">
-      <button id="theme-btn" class="icon-btn" type="button" aria-label="Toggle color theme" title="Toggle theme">🌙</button>
-      <a href="/timeline" class="btn btn-ghost btn-sm">Timeline</a>
-      <a href="/uploads" class="btn btn-ghost btn-sm">Media</a>
-      <a href="/data" class="btn btn-ghost btn-sm">Data</a>
-      <a href="/new" class="btn btn-primary btn-sm">+ New article</a>
+    <div class="topbar-right">${nav}
     </div>
   </div>
-</header>
-<aside id="drawer" class="drawer" aria-hidden="true">
-  <div class="drawer-head">Table of contents</div>
-  <div class="sidebar-search">
-    <input id="search" type="search" placeholder="Search the aether…" autocomplete="off" />
-    <div id="search-results" class="search-results hidden"></div>
-  </div>
-  <nav class="tree">${active}</nav>
-  <div class="drawer-foot">
-    <button id="bg-toggle" class="btn btn-ghost btn-sm" type="button" aria-pressed="true">✦ Animated background</button>
-  </div>
-</aside>
-<div id="scrim" class="scrim" aria-hidden="true"></div>
+</header>${drawer}
 <main class="content">
 ${body}
 </main>
@@ -178,6 +249,7 @@ ${body}
 <script type="module" src="/background.js"></script>
 </body>
 </html>`;
+};
 
 const treeHtml = (tree, current) => {
   if (!tree.length) return '<p class="empty-tree">No articles yet. <a href="/new">Create one</a>.</p>';
@@ -206,6 +278,41 @@ function toDate(iso) {
   if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
+
+app.get("/login", (req, res) => {
+  if (AUTH_ENABLED && isAuthed(req)) return res.redirect(safeNext(req.query.next));
+  const error = req.query.error ? `<div class="toast toast-error">${escapeHtml(req.query.error)}</div>` : "";
+  const body = `
+<section class="login-wrap">
+  <h1 class="page-title">✦ Sign in</h1>
+  <p class="login-sub">This wiki is private. Enter your credentials to continue.</p>
+  ${error}
+  <form class="editor-form login-form" action="/login" method="POST">
+    <input type="hidden" name="next" value="${escapeHtml(safeNext(req.query.next))}" />
+    <label class="field"><span>Username</span><input name="username" autocomplete="username" required autofocus /></label>
+    <label class="field"><span>Password</span><input name="password" type="password" autocomplete="current-password" required /></label>
+    <button class="btn btn-primary" type="submit">Sign in</button>
+  </form>
+</section>`;
+  res.send(layout("Sign in", body, "", { bare: true }));
+});
+
+app.post("/login", verifyCsrf, (req, res) => {
+  const { username, password } = req.body || {};
+  const next = safeNext(req.body?.next);
+  if (!checkCredentials(username, password)) {
+    return res.status(401).send(layout("Sign in failed", `<div class="login-wrap"><div class="toast toast-error">Invalid username or password.</div><a class="btn btn-primary" href="/login">Try again</a></div>`, "", { bare: true }));
+  }
+  res.cookie(SESSION_COOKIE, signSession({ user: AUTH_USER, exp: Date.now() + SESSION_TTL }), {
+    httpOnly: true, sameSite: "lax", path: "/", secure: req.secure, maxAge: SESSION_TTL,
+  });
+  res.redirect(next);
+});
+
+app.post("/logout", verifyCsrf, (req, res) => {
+  res.clearCookie(SESSION_COOKIE, { path: "/" });
+  res.redirect("/login");
+});
 
 app.get("/", async (req, res) => {
   const tree = await buildTree();
