@@ -9,7 +9,7 @@ import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
 import { listArticles, getArticle, saveArticle, deleteArticle, buildTree, slugify, invalidateCache, historySupported, trashSupported, articleRevisions, articleRevision, restoreRevision, listTrashItems, restoreTrashed, purgeTrashed } from "./lib/articles.js";
-import { renderMarkdown, extractExcerpt } from "./lib/render.js";
+import { renderMarkdown, extractExcerpt, extractLinks } from "./lib/render.js";
 import { searchArticles, highlight, matchExcerpt } from "./lib/search.js";
 import { ADAPTER, exportData, importData } from "./lib/storage.js";
 import { MEDIA_ADAPTER, uploadStorage, listMedia, saveMedia, removeMedia, streamMedia, kindOf } from "./lib/media.js";
@@ -204,6 +204,7 @@ const layout = (title, body, active = "", meta = {}) => {
   const nav = bare ? "" : `
       <button id="theme-btn" class="icon-btn" type="button" aria-label="Toggle color theme" title="Toggle theme">🌙</button>
       <a href="/timeline" class="btn btn-ghost btn-sm">Timeline</a>
+      <a href="/graph" class="btn btn-ghost btn-sm">Graph</a>
       <a href="/uploads" class="btn btn-ghost btn-sm">Media</a>
       <a href="/data" class="btn btn-ghost btn-sm">Data</a>
       <a href="/new" class="btn btn-primary btn-sm">+ New article</a>
@@ -253,6 +254,7 @@ ${body}
 </main>
 <script src="/app.js"></script>
 <script type="module" src="/background.js"></script>
+${(meta.scripts || []).map((src) => `<script type="module" src="${escapeHtml(src)}"></script>`).join("")}
 </body>
 </html>`;
 };
@@ -614,6 +616,34 @@ app.get("/tags/:tag", async (req, res) => {
     ${results.length ? `<div class="card-list">${results.map((a) => `<a class="card" href="/${a.slug}"><h3>${escapeHtml(a.title)}</h3><p>${escapeHtml(extractExcerpt(a))}</p></a>`).join("")}</div>` : '<p class="empty">No articles with this tag.</p>'}
   </section>`;
   res.send(layout(`#${tag}`, body, treeHtml(tree)));
+});
+
+app.get("/graph", async (req, res) => {
+  const tree = await buildTree();
+  const articles = await listArticles();
+  const known = new Set(articles.map((a) => a.slug));
+  const nodes = articles.map((a) => ({ id: a.slug, title: a.title, tags: a.tags || [] }));
+  const seen = new Set();
+  const edges = [];
+  const addEdge = (source, target, kind) => {
+    if (!known.has(source) || !known.has(target) || source === target) return;
+    const key = `${source}|${target}|${kind}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    edges.push({ source, target, kind });
+  };
+  for (const article of articles) {
+    for (const target of extractLinks(article.content)) addEdge(article.slug, target, "link");
+    if (article.parent) addEdge(article.parent, article.slug, "parent");
+  }
+  const graph = JSON.stringify({ nodes, edges });
+  const body = `
+<section class="graph-wrap">
+  <div class="editor-toolbar"><h2>The graph</h2><a href="/" class="btn btn-ghost btn-sm">← Home</a></div>
+  <p class="hint">${nodes.length} pages · ${edges.length} links. Drag nodes to explore, click to open an article.</p>
+  <div id="graph" class="graph" data-graph="${escapeHtml(graph)}"></div>
+</section>`;
+  res.send(layout("Graph", body, treeHtml(tree), { scripts: ["/graph.js"] }));
 });
 
 app.get("/timeline", async (req, res) => {

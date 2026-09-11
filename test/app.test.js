@@ -202,6 +202,16 @@ test("lists and deletes media", async () => {
   assert.ok(!fs.existsSync(path.join(up, "sample.png")));
 });
 
+test("builds a link graph", async () => {
+  const res = await fetch(`${base}/graph`);
+  const text = await res.text();
+  assert.equal(res.status, 200);
+  assert.match(text, /id="graph"/);
+  assert.match(text, /data-graph="/);
+  assert.match(text, /graph\.js/);
+  assert.match(text, /hello-world/);
+});
+
 test("moves deleted articles to trash and restores them", async () => {  const { saveArticle } = await import("../lib/articles.js");
   await saveArticle({ existingSlug: "", meta: { title: "Trash Me" }, content: "gone soon" });
   const del = await fetch(`${base}/api/articles/trash-me/delete`, {

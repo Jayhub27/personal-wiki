@@ -841,6 +841,17 @@ mark { background: rgba(255, 214, 0, 0.32); color: inherit; border-radius: 3px; 
 [data-theme="light"] .hljs-type, [data-theme="light"] .hljs-class .hljs-title { color: #b45309; }
 [data-theme="light"] .hljs-variable, [data-theme="light"] .hljs-name { color: #b42318; }
 
+/* ---- Graph view ---- */
+.graph { width: 100%; height: 62vh; min-height: 420px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-2); overflow: hidden; }
+.graph-svg { width: 100%; height: 100%; display: block; touch-action: none; }
+.graph-link { stroke: var(--border-strong); stroke-width: 1; }
+.graph-link.parent { stroke: var(--violet); stroke-dasharray: 4 4; opacity: 0.5; }
+.graph-node { cursor: pointer; }
+.graph-node circle { fill: var(--violet); stroke: var(--bg); stroke-width: 2; }
+.graph-node text { fill: var(--muted); font-size: 11px; text-anchor: middle; font-family: var(--font); pointer-events: none; }
+.graph-node:hover circle { fill: var(--cyan); }
+.graph-node:hover text { fill: var(--text); }
+
 @media (max-width: 640px) {
   .editor-meta { grid-template-columns: 1fr; }
   .hero { padding: 40px 0 30px; }
