@@ -144,6 +144,22 @@
     });
   });
 
+  document.querySelectorAll("[data-delete-media]").forEach((b) => {
+    b.addEventListener("click", () => {
+      if (!confirm("Delete this media file permanently?")) return;
+      const f = document.createElement("form");
+      f.method = "POST";
+      f.action = "/api/media/" + encodeURIComponent(b.dataset.deleteMedia) + "/delete";
+      const token = document.createElement("input");
+      token.type = "hidden";
+      token.name = "_csrf";
+      token.value = csrfToken();
+      f.appendChild(token);
+      document.body.appendChild(f);
+      f.submit();
+    });
+  });
+
   // ---- Timeline ----
   const timelineEl = document.getElementById("timeline");
 

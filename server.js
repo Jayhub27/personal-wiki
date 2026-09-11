@@ -8,8 +8,9 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
-import { listArticles, getArticle, saveArticle, deleteArticle, buildTree, slugify } from "./lib/articles.js";
+import { listArticles, getArticle, saveArticle, deleteArticle, buildTree, slugify, invalidateCache } from "./lib/articles.js";
 import { renderMarkdown, extractExcerpt } from "./lib/render.js";
+import { searchArticles, highlight, matchExcerpt } from "./lib/search.js";
 import { ADAPTER, exportData, importData } from "./lib/storage.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -179,6 +180,7 @@ function firstIssue(error) {
   return issue ? `${issue.path.join(".") || "input"}: ${issue.message}` : "Invalid input";
 }
 
+const MEDIA_MIME = /^(image|video|audio)\//;
 const upload = multer({
   storage: multer.diskStorage({
     destination: UPLOAD_DIR,
@@ -187,8 +189,17 @@ const upload = multer({
       cb(null, `${Date.now()}-${safe}`);
     },
   }),
-  limits: { fileSize: 500 * 1024 * 1024 },
+  limits: { fileSize: 500 * 1024 * 1024, files: 20 },
+  fileFilter: (_req, file, cb) => cb(null, MEDIA_MIME.test(file.mimetype)),
 });
+
+function uploadFiles(req, res, next) {
+  upload.array("files")(req, res, (err) => {
+    if (err) return res.status(400).send("Upload rejected: " + err.message);
+    if (!req.files?.length) return res.redirect("/uploads?error=type");
+    next();
+  });
+}
 
 const layout = (title, body, active = "", meta = {}) => {
   const bare = !!meta.bare;
@@ -270,6 +281,22 @@ function safeUrl(url) {
   return /^https?:\/\//i.test(value) ? value : "";
 }
 
+function paginate(items, page, perPage) {
+  const total = items.length;
+  const pages = Math.max(1, Math.ceil(total / perPage));
+  const current = Math.min(Math.max(1, Number(page) || 1), pages);
+  return { items: items.slice((current - 1) * perPage, current * perPage), page: current, pages, total };
+}
+
+function pageBar(base, page, pages) {
+  if (pages <= 1) return "";
+  const sep = base.includes("?") ? "&" : "?";
+  const link = (p, label, disabled) => (disabled
+    ? `<span class="page-btn disabled">${label}</span>`
+    : `<a class="page-btn" href="${base}${sep}page=${p}">${label}</a>`);
+  return `<nav class="pagination">${link(page - 1, "← Prev", page <= 1)}<span class="page-count">Page ${page} / ${pages}</span>${link(page + 1, "Next →", page >= pages)}</nav>`;
+}
+
 const adapterLabels = { files: "Local files (content/*.md)", supabase: "Supabase (Postgres)", vercel: "Vercel Postgres" };
 
 function toDate(iso) {
@@ -316,8 +343,8 @@ app.post("/logout", verifyCsrf, (req, res) => {
 
 app.get("/", async (req, res) => {
   const tree = await buildTree();
-  const articles = (await listArticles()).sort((a, b) => (b.updated || b.created || "").localeCompare(a.updated || a.created || ""));
-  const recent = articles.slice(0, 8);
+  const sorted = (await listArticles()).sort((a, b) => (b.updated || b.created || "").localeCompare(a.updated || a.created || ""));
+  const { items, page, pages, total } = paginate(sorted, req.query.page, 12);
   const body = `
 <section class="hero">
   <span class="chip">✦ your personal library</span>
@@ -328,13 +355,16 @@ app.get("/", async (req, res) => {
     <a href="/uploads" class="btn btn-ghost">Media library</a>
   </div>
 </section>
-${articles.length ? `<section class="card-list">
-<div class="section-title">Recent articles</div>
-${recent.map((a) => `<a class="card" href="/${a.slug}">
+${total ? `<section>
+<div class="section-title">Articles <span class="count">${total}</span></div>
+<div class="card-list">
+${items.map((a) => `<a class="card" href="/${a.slug}">
   <h3>${escapeHtml(a.title)}</h3>
   <p>${escapeHtml(extractExcerpt(a))}</p>
   <span class="card-meta">${toDate(a.updated || a.created)}${a.parent ? ` · sub-article` : ""}</span>
 </a>`).join("")}
+</div>
+${pageBar("/", page, pages)}
 </section>` : ""}`;
   res.send(layout("Personal Wiki", body, treeHtml(tree)));
 });
@@ -459,13 +489,14 @@ app.get("/:slug/edit", async (req, res) => {
 
 app.get("/uploads", async (req, res) => {
   const tree = await buildTree();
-  const files = fs.readdirSync(UPLOAD_DIR).filter((f) => !f.startsWith(".")).map((f) => {
+  const all = fs.readdirSync(UPLOAD_DIR).filter((f) => !f.startsWith(".")).map((f) => {
     const p = path.join(UPLOAD_DIR, f);
     const stat = fs.statSync(p);
     const ext = path.extname(f).slice(1).toLowerCase();
     const kind = ["png", "jpg", "jpeg", "gif", "webp", "svg", "avif"].includes(ext) ? "image" : ["mp4", "webm", "mov", "ogg", "m4v"].includes(ext) ? "video" : ["mp3", "wav", "m4a", "flac", "aac"].includes(ext) ? "audio" : "file";
     return { name: f, size: stat.size, date: stat.mtime, url: `/uploads/${f}`, kind, ext };
   }).sort((a, b) => b.date - a.date);
+  const { items: files, page, pages } = paginate(all, req.query.page, 24);
   const mkItem = (f) => {
     const size = f.size > 1e6 ? `${(f.size / 1e6).toFixed(1)} MB` : `${Math.round(f.size / 1e3)} KB`;
     const preview = f.kind === "image" ? `<img src="${f.url}" alt="" loading="lazy" />`
@@ -481,6 +512,7 @@ app.get("/uploads", async (req, res) => {
       <div class="media-actions">
         <button class="btn btn-ghost btn-sm" data-copy="${f.url}">Copy link</button>
         <button class="btn btn-ghost btn-sm" data-embed="${f.kind}" data-url="${f.url}">Embed</button>
+        <button class="btn btn-ghost btn-sm" data-delete-media="${f.name}">Delete</button>
       </div>
     </div>`;
   };
@@ -492,22 +524,23 @@ app.get("/uploads", async (req, res) => {
     <button class="btn btn-primary" type="submit">Upload</button>
   </form>
   <div class="hint">After uploading, use <strong>Copy link</strong> to grab the URL, or <strong>Embed</strong> to insert it into your article.</div>
-  <div class="media-grid">${files.length ? files.map(mkItem).join("") : '<p class="empty">No media yet. Upload something above.</p>'}</div>
+  <div class="media-grid">${all.length ? files.map(mkItem).join("") : '<p class="empty">No media yet. Upload something above.</p>'}</div>
+  ${pageBar("/uploads", page, pages)}
 </section>`;
   res.send(layout("Media library", body, treeHtml(tree)));
 });
 
 app.get("/search", async (req, res) => {
-  const q = (req.query.q || "").trim().toLowerCase();
+  const q = (req.query.q || "").trim();
   const tree = await buildTree();
   if (!q) return res.redirect("/");
-  const results = (await listArticles())
-    .filter((a) => a.title.toLowerCase().includes(q) || (a.content || "").toLowerCase().includes(q) || (a.tags || []).some((t) => t.toLowerCase().includes(q)))
-    .sort((a, b) => a.title.localeCompare(b.title));
+  const ranked = searchArticles(await listArticles(), q);
+  const { items, page, pages, total } = paginate(ranked, req.query.page, 20);
+  const base = `/search?q=${encodeURIComponent(q)}`;
   const body = `
 <section>
-  <h1>Search: "${escapeHtml(q)}"</h1>
-  ${results.length ? `<div class="card-list">${results.map((a) => `<a class="card" href="/${a.slug}"><h3>${escapeHtml(a.title)}</h3><p>${escapeHtml(extractExcerpt(a))}</p></a>`).join("")}</div>` : '<p class="empty">No results. <a href="/new?title=' + encodeURIComponent(q) + '">Create it?</a></p>'}
+  <h1>Search: "${escapeHtml(q)}" <span class="count">${total}</span></h1>
+  ${total ? `<div class="card-list">${items.map((a) => `<a class="card" href="/${a.slug}"><h3>${highlight(a.title, q)}</h3><p>${highlight(matchExcerpt(a, q), q)}</p></a>`).join("")}</div>${pageBar(base, page, pages)}` : '<p class="empty">No results. <a href="/new?title=' + encodeURIComponent(q) + '">Create it?</a></p>'}
 </section>`;
   res.send(layout(`Search: ${q}`, body, treeHtml(tree)));
 });
@@ -672,9 +705,18 @@ ${allTags.length ? `<section class="all-tags"><h2>All tags</h2>${allTags.map((t)
   res.send(layout(article.title, body, treeHtml(tree, slug), { description: extractExcerpt(article) || article.title }));
 });
 
-app.post("/api/upload", uploadLimiter, upload.array("files"), verifyCsrf, (req, res) => {
-  if (!req.files || !req.files.length) return res.redirect("/uploads?error=none");
+app.post("/api/upload", uploadLimiter, uploadFiles, verifyCsrf, (req, res) => {
   res.redirect("/uploads?ok=" + req.files.length);
+});
+
+app.post("/api/media/:name/delete", mutationLimiter, verifyCsrf, (req, res) => {
+  const name = path.basename(String(req.params.name || ""));
+  const target = path.join(UPLOAD_DIR, name);
+  if (!name || !target.startsWith(UPLOAD_DIR + path.sep) || !fs.existsSync(target)) {
+    return res.status(404).send("File not found");
+  }
+  fs.unlinkSync(target);
+  res.redirect("/uploads");
 });
 
 app.post("/api/articles", mutationLimiter, verifyCsrf, async (req, res) => {
@@ -716,13 +758,17 @@ app.get("/api/export", async (req, res) => {
 });
 
 const bundleUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
-app.post("/api/import", uploadLimiter, bundleUpload.single("bundle"), verifyCsrf, async (req, res) => {
+function uploadBundle(req, res, next) {
+  bundleUpload.single("bundle")(req, res, (err) => (err ? res.status(400).send("Import rejected: " + err.message) : next()));
+}
+app.post("/api/import", uploadLimiter, uploadBundle, verifyCsrf, async (req, res) => {
   try {
     if (!req.file) return res.status(400).send("Please upload a JSON bundle file.");
     const raw = JSON.parse(req.file.buffer.toString("utf8"));
     const parsed = importSchema.safeParse(raw);
     if (!parsed.success) return res.status(400).send("Invalid import bundle: " + firstIssue(parsed.error));
     const slugs = await importData(parsed.data);
+    invalidateCache();
     res.redirect(`/data?imported=${slugs.length}`);
   } catch (err) {
     res.status(400).send("Import failed: " + err.message);
