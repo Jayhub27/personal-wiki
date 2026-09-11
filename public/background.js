@@ -62,7 +62,13 @@ if (canvas) {
     camera.lookAt(scene.position);
     renderer.render(scene, camera);
   };
-  animate();
+  const prefersReducedMotion = window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+  const backgroundOff = document.documentElement.dataset.bg === "off";
+  if (prefersReducedMotion || backgroundOff) {
+    renderer.render(scene, camera);
+  } else {
+    animate();
+  }
 
   window.addEventListener("resize", () => {
     camera.aspect = window.innerWidth / window.innerHeight;

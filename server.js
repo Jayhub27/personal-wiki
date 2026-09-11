@@ -48,6 +48,14 @@ const layout = (title, body, active = "", meta = {}) => `<!doctype html>
 <meta name="twitter:card" content="summary" />
 <link rel="stylesheet" href="/style.css" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✦</text></svg>" />
+<script>
+try {
+  var t = localStorage.getItem("aetherwiki-theme");
+  if (!t) t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+  document.documentElement.dataset.theme = t;
+  if (localStorage.getItem("aetherwiki-bg") === "off") document.documentElement.dataset.bg = "off";
+} catch (e) {}
+</script>
 </head>
 <body>
 <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -58,6 +66,7 @@ const layout = (title, body, active = "", meta = {}) => `<!doctype html>
     <button id="menu-btn" class="icon-btn" aria-label="Toggle navigation">☰</button>
     <a class="brand" href="/"><span class="brand-mark">✦</span> Aetherwiki</a>
     <div class="topbar-right">
+      <button id="theme-btn" class="icon-btn" type="button" aria-label="Toggle color theme" title="Toggle theme">🌙</button>
       <a href="/timeline" class="btn btn-ghost btn-sm">Timeline</a>
       <a href="/uploads" class="btn btn-ghost btn-sm">Media</a>
       <a href="/data" class="btn btn-ghost btn-sm">Data</a>
@@ -72,6 +81,9 @@ const layout = (title, body, active = "", meta = {}) => `<!doctype html>
     <div id="search-results" class="search-results hidden"></div>
   </div>
   <nav class="tree">${active}</nav>
+  <div class="drawer-foot">
+    <button id="bg-toggle" class="btn btn-ghost btn-sm" type="button" aria-pressed="true">✦ Animated background</button>
+  </div>
 </aside>
 <div id="scrim" class="scrim" aria-hidden="true"></div>
 <main class="content">

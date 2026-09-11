@@ -1,4 +1,31 @@
 (() => {
+  const themeBtn = document.getElementById("theme-btn");
+  const applyTheme = (theme) => {
+    document.documentElement.dataset.theme = theme;
+    try { localStorage.setItem("aetherwiki-theme", theme); } catch (e) { /* ignore */ }
+    if (themeBtn) themeBtn.textContent = theme === "light" ? "☀️" : "🌙";
+  };
+  if (themeBtn) {
+    applyTheme(document.documentElement.dataset.theme || "dark");
+    themeBtn.addEventListener("click", () => {
+      applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+    });
+  }
+
+  const bgToggle = document.getElementById("bg-toggle");
+  const applyBg = (on) => {
+    document.documentElement.dataset.bg = on ? "on" : "off";
+    try { localStorage.setItem("aetherwiki-bg", on ? "on" : "off"); } catch (e) { /* ignore */ }
+    if (bgToggle) {
+      bgToggle.setAttribute("aria-pressed", on ? "true" : "false");
+      bgToggle.textContent = on ? "✦ Animated background" : "✦ Background paused";
+    }
+  };
+  if (bgToggle) {
+    applyBg(document.documentElement.dataset.bg !== "off");
+    bgToggle.addEventListener("click", () => applyBg(document.documentElement.dataset.bg === "off"));
+  }
+
   const menuBtn = document.getElementById("menu-btn");
   const drawer = document.getElementById("drawer");
   const scrim = document.getElementById("scrim");
