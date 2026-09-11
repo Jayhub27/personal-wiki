@@ -212,6 +212,14 @@ test("builds a link graph", async () => {
   assert.match(text, /hello-world/);
 });
 
+test("exposes PWA assets and a manifest link", async () => {
+  const sw = await fetch(`${base}/sw.js`);
+  assert.equal(sw.status, 200);
+  const manifest = await fetch(`${base}/manifest.webmanifest`);
+  assert.equal(manifest.status, 200);
+  assert.match(await (await fetch(`${base}/`)).text(), /rel="manifest"/);
+});
+
 test("moves deleted articles to trash and restores them", async () => {  const { saveArticle } = await import("../lib/articles.js");
   await saveArticle({ existingSlug: "", meta: { title: "Trash Me" }, content: "gone soon" });
   const del = await fetch(`${base}/api/articles/trash-me/delete`, {

@@ -1,0 +1,11 @@
+services:
+  wiki:
+    build: .
+    ports:
+      - "3210:3210"
+    env_file:
+      - .env
+    volumes:
+      - ./content:/app/content
+      - ./public/uploads:/app/public/uploads
+    restart: unless-stopped

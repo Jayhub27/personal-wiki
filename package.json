@@ -5,6 +5,8 @@
   "main": "server.js",
   "scripts": {
     "test": "node test/run.mjs",
+    "lint": "node scripts/check.mjs",
+    "migrate": "node scripts/migrate.mjs",
     "start": "node server.js",
     "dev": "node --watch server.js"
   },
@@ -31,5 +33,8 @@
     "sanitize-html": "~2.16.0",
     "three": "^0.185.1",
     "zod": "^4.6.2"
+  },
+  "optionalDependencies": {
+    "pg": "^8.13.0"
   }
 }

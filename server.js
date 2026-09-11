@@ -35,6 +35,8 @@ app.use(helmet({
       imgSrc: ["'self'", "data:", "blob:"],
       mediaSrc: ["'self'", "blob:"],
       connectSrc: ["'self'"],
+      workerSrc: ["'self'"],
+      manifestSrc: ["'self'"],
       objectSrc: ["'none'"],
       baseUri: ["'self'"],
       frameAncestors: ["'none'"],
@@ -131,7 +133,7 @@ function safeNext(value) {
   return next.startsWith("/") && !next.startsWith("//") ? next : "/";
 }
 
-const OPEN_PATHS = new Set(["/login", "/logout", "/health", "/style.css", "/app.js", "/background.js", "/theme-init.js"]);
+const OPEN_PATHS = new Set(["/login", "/logout", "/health", "/style.css", "/app.js", "/background.js", "/theme-init.js", "/graph.js", "/sw.js", "/manifest.webmanifest", "/icon.svg"]);
 const isOpenPath = (pathname) => OPEN_PATHS.has(pathname) || pathname.startsWith("/vendor/");
 
 app.use((req, res, next) => {
@@ -234,7 +236,10 @@ const layout = (title, body, active = "", meta = {}) => {
 <meta property="og:type" content="website" />
 <meta name="twitter:card" content="summary" />
 <link rel="stylesheet" href="/style.css" />
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✦</text></svg>" />
+<link rel="manifest" href="/manifest.webmanifest" />
+<meta name="theme-color" content="#9f6bff" />
+<link rel="apple-touch-icon" href="/icon.svg" />
+<link rel="icon" href="/icon.svg" />
 <script src="/theme-init.js"></script>
 </head>
 <body>
