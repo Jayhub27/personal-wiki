@@ -158,8 +158,33 @@ test("keeps revisions and restores a previous one", async () => {
   assert.match(await (await fetch(`${base}/versioned`)).text(), /version one/);
 });
 
-test("moves deleted articles to trash and restores them", async () => {
+test("renders highlighted code and a table of contents", async () => {
   const { saveArticle } = await import("../lib/articles.js");
+  await saveArticle({
+    existingSlug: "",
+    meta: { title: "Formatted" },
+    content: "## First section\n\n```js\nconst x = 1;\n```\n\n### Sub section\n\nbody text",
+  });
+  const res = await fetch(`${base}/formatted`);
+  const text = await res.text();
+  assert.equal(res.status, 200);
+  assert.match(text, /id="first-section"/);
+  assert.match(text, /class="article-toc"/);
+  assert.match(text, /hljs-keyword/);
+});
+
+test("previews markdown via the API", async () => {
+  const res = await fetch(`${base}/api/preview`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ content: "**bold** and `code`" }),
+  });
+  assert.equal(res.status, 200);
+  const body = await res.json();
+  assert.match(body.html, /<strong>bold<\/strong>/);
+});
+
+test("moves deleted articles to trash and restores them", async () => {  const { saveArticle } = await import("../lib/articles.js");
   await saveArticle({ existingSlug: "", meta: { title: "Trash Me" }, content: "gone soon" });
   const del = await fetch(`${base}/api/articles/trash-me/delete`, {
     method: "POST",

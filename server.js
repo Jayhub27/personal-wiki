@@ -415,8 +415,10 @@ app.get("/new", async (req, res) => {
         <button type="button" data-ins="![](/uploads/image.png)">🖼️</button>
         <button type="button" data-ins="<video controls src=\"/uploads/video.mp4\"></video>">🎬</button>
         <button type="button" data-ins="<audio controls src=\"/uploads/audio.mp3\"></audio>">🎧</button>
+        <button type="button" data-preview-toggle aria-pressed="false">👁️ Preview</button>
       </div>
       <textarea name="content" rows="18" placeholder="Write in markdown… Use [[Page Title]] to link to another wiki page."></textarea>
+      <div id="md-preview" class="md-preview hidden" aria-live="polite"></div>
     </label>
     <div class="editor-actions">
       <button class="btn btn-primary" type="submit">Publish</button>
@@ -474,8 +476,10 @@ app.get("/:slug/edit", async (req, res) => {
         <button type="button" data-ins="![](/uploads/image.png)">🖼️</button>
         <button type="button" data-ins="<video controls src=\"/uploads/video.mp4\"></video>">🎬</button>
         <button type="button" data-ins="<audio controls src=\"/uploads/audio.mp3\"></audio>">🎧</button>
+        <button type="button" data-preview-toggle aria-pressed="false">👁️ Preview</button>
       </div>
       <textarea name="content" rows="18">${escapeHtml(article.content)}</textarea>
+      <div id="md-preview" class="md-preview hidden" aria-live="polite"></div>
     </label>
     <div class="editor-actions">
       <button class="btn btn-primary" type="submit">Save changes</button>
@@ -743,7 +747,7 @@ app.get("/:slug", async (req, res) => {
     return res.status(404).send(layout("Not found", body, treeHtml(tree)));
   }
 
-  const { html, backlinks, unresolved } = renderMarkdown(article, { tree });
+  const { html, backlinks, unresolved, toc } = renderMarkdown(article, { tree });
   const kids = tree.find((n) => n.slug === slug)?.children || [];
   const parent = article.parent ? await getArticle(article.parent) : null;
   const allTags = [...new Set((await listArticles()).flatMap((a) => a.tags || []))].sort();
@@ -767,6 +771,7 @@ app.get("/:slug", async (req, res) => {
   </div>
   <h1 class="article-title">${escapeHtml(article.title)}</h1>
   ${article.lead ? `<p class="lead">${escapeHtml(article.lead)}</p>` : ""}
+  ${toc.length > 1 ? `<nav class="article-toc" aria-label="On this page"><div class="article-toc-head">On this page</div><ul>${toc.map((t) => `<li class="toc-${t.level}"><a href="#${escapeHtml(t.id)}">${escapeHtml(t.text)}</a></li>`).join("")}</ul></nav>` : ""}
   <div class="wiki-body">${html}</div>
   ${refBlock}
   ${article.tags && article.tags.length ? `<div class="tags">${article.tags.map((t) => `<a class="tag" href="/tags/${encodeURIComponent(t)}">#${escapeHtml(t)}</a>`).join("")}</div>` : ""}
@@ -808,6 +813,13 @@ app.post("/api/articles/:slug/delete", mutationLimiter, verifyCsrf, async (req, 
   if (kids.length) return res.status(400).send("Cannot delete: it has sub-articles. Remove or re-parent them first.");
   await deleteArticle(req.params.slug);
   res.redirect("/");
+});
+
+app.post("/api/preview", mutationLimiter, async (req, res) => {
+  const content = String((req.body && req.body.content) || "").slice(0, 200_000);
+  const tree = await buildTree();
+  const { html, toc } = renderMarkdown({ content }, { tree });
+  res.json({ html, toc });
 });
 
 app.get("/api/search", async (req, res) => {

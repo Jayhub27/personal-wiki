@@ -810,6 +810,37 @@ mark { background: rgba(255, 214, 0, 0.32); color: inherit; border-radius: 3px; 
 .revision-actions form { display: inline; }
 .article-actions { display: flex; gap: 8px; justify-content: flex-end; }
 
+/* ---- Article table of contents ---- */
+.article-toc { max-width: 780px; margin: 0 auto 26px; background: var(--bg-2); border: 1px solid var(--border); border-radius: 14px; padding: 16px 20px; }
+.article-toc-head { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted); margin-bottom: 8px; font-weight: 600; }
+.article-toc ul { list-style: none; margin: 0; padding: 0; }
+.article-toc li { margin: 5px 0; font-size: 0.92rem; }
+.article-toc li.toc-3 { padding-left: 16px; }
+.article-toc a { color: var(--muted); }
+.article-toc a:hover { color: var(--text); }
+
+/* ---- Markdown preview & dropzone ---- */
+.md-preview { margin-top: 12px; padding: 18px 20px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-2); min-height: 120px; }
+.upload-form.dragover { border-color: var(--violet); background: var(--bg-3); }
+
+/* ---- Code highlighting (highlight.js) ---- */
+.wiki-body pre code.hljs { display: block; background: transparent; border: none; padding: 0; }
+.hljs-comment, .hljs-quote { color: #7c8296; font-style: italic; }
+.hljs-keyword, .hljs-selector-tag, .hljs-built_in { color: #c792ea; }
+.hljs-string, .hljs-attr, .hljs-template-tag { color: #a5e075; }
+.hljs-number, .hljs-literal { color: #f78c6c; }
+.hljs-title, .hljs-section { color: #82aaff; }
+.hljs-type, .hljs-class .hljs-title { color: #ffcb6b; }
+.hljs-variable, .hljs-name { color: #ff8b84; }
+.hljs-tag { color: #9aa1b5; }
+[data-theme="light"] .hljs-comment, [data-theme="light"] .hljs-quote { color: #6b7280; }
+[data-theme="light"] .hljs-keyword, [data-theme="light"] .hljs-selector-tag, [data-theme="light"] .hljs-built_in { color: #7c3aed; }
+[data-theme="light"] .hljs-string, [data-theme="light"] .hljs-attr { color: #15803d; }
+[data-theme="light"] .hljs-number, [data-theme="light"] .hljs-literal { color: #c2410c; }
+[data-theme="light"] .hljs-title, [data-theme="light"] .hljs-section { color: #1d4ed8; }
+[data-theme="light"] .hljs-type, [data-theme="light"] .hljs-class .hljs-title { color: #b45309; }
+[data-theme="light"] .hljs-variable, [data-theme="light"] .hljs-name { color: #b42318; }
+
 @media (max-width: 640px) {
   .editor-meta { grid-template-columns: 1fr; }
   .hero { padding: 40px 0 30px; }

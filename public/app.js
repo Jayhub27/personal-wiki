@@ -43,11 +43,30 @@
   const drawer = document.getElementById("drawer");
   const scrim = document.getElementById("scrim");
   if (menuBtn && drawer && scrim) {
-    const close = () => { drawer.classList.remove("open"); scrim.classList.remove("show"); drawer.setAttribute("aria-hidden", "true"); };
+    menuBtn.setAttribute("aria-expanded", "false");
+    const focusables = () => Array.from(drawer.querySelectorAll('a[href], button, input')).filter((el) => el.offsetParent !== null);
+    const close = () => {
+      drawer.classList.remove("open");
+      scrim.classList.remove("show");
+      drawer.setAttribute("aria-hidden", "true");
+      menuBtn.setAttribute("aria-expanded", "false");
+      menuBtn.focus();
+    };
     menuBtn.addEventListener("click", () => {
       const open = drawer.classList.toggle("open");
       scrim.classList.toggle("show", open);
       drawer.setAttribute("aria-hidden", open ? "false" : "true");
+      menuBtn.setAttribute("aria-expanded", open ? "true" : "false");
+      if (open) focusables()[0]?.focus();
+    });
+    drawer.addEventListener("keydown", (e) => {
+      if (e.key !== "Tab") return;
+      const items = focusables();
+      if (!items.length) return;
+      const first = items[0];
+      const last = items[items.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
     });
     scrim.addEventListener("click", close);
     drawer.querySelectorAll('a').forEach((a) => a.addEventListener("click", close));
@@ -76,6 +95,49 @@
     });
     document.addEventListener("click", (e) => {
       if (!search.contains(e.target) && !results.contains(e.target)) results.classList.add("hidden");
+    });
+  }
+
+  const preview = document.getElementById("md-preview");
+  const contentArea = document.querySelector('.editor-form textarea[name="content"]');
+  const previewToggle = document.querySelector("[data-preview-toggle]");
+  if (preview && contentArea && previewToggle) {
+    let timer;
+    const renderPreview = async () => {
+      try {
+        const r = await fetch("/api/preview", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ content: contentArea.value }),
+        });
+        const data = await r.json();
+        preview.innerHTML = data.html || "";
+      } catch (e) { /* ignore */ }
+    };
+    const setPreview = (show) => {
+      preview.classList.toggle("hidden", !show);
+      previewToggle.setAttribute("aria-pressed", show ? "true" : "false");
+      if (show) renderPreview();
+    };
+    previewToggle.addEventListener("click", () => setPreview(preview.classList.contains("hidden")));
+    contentArea.addEventListener("input", () => {
+      if (preview.classList.contains("hidden")) return;
+      clearTimeout(timer);
+      timer = setTimeout(renderPreview, 300);
+    });
+  }
+
+  const uploadForm = document.querySelector(".upload-form");
+  if (uploadForm) {
+    const fileInput = uploadForm.querySelector('input[type="file"]');
+    ["dragenter", "dragover"].forEach((ev) => uploadForm.addEventListener(ev, (e) => { e.preventDefault(); uploadForm.classList.add("dragover"); }));
+    ["dragleave", "drop"].forEach((ev) => uploadForm.addEventListener(ev, (e) => { e.preventDefault(); uploadForm.classList.remove("dragover"); }));
+    uploadForm.addEventListener("drop", (e) => {
+      const files = e.dataTransfer?.files;
+      if (!files?.length || !fileInput) return;
+      fileInput.files = files;
+      if (uploadForm.requestSubmit) uploadForm.requestSubmit();
+      else uploadForm.submit();
     });
   }
 
