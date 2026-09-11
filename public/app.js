@@ -130,7 +130,7 @@
 
   document.querySelectorAll("[data-delete]").forEach((b) => {
     b.addEventListener("click", async () => {
-      if (!confirm("Delete this article permanently?")) return;
+      if (!confirm("Move this article to the trash?")) return;
       const f = document.createElement("form");
       f.method = "POST";
       f.action = "/api/articles/" + b.dataset.delete + "/delete";

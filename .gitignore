@@ -1,4 +1,6 @@
 node_modules/
 public/uploads/
+content/.revisions/
+content/.trash/
 *.log
 .DS_Store

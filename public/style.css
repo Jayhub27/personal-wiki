@@ -802,6 +802,14 @@ img, video { max-width: 100%; border-radius: 12px; }
 mark { background: rgba(255, 214, 0, 0.32); color: inherit; border-radius: 3px; padding: 0 2px; }
 [data-theme="light"] mark { background: #fde68a; }
 
+/* ---- History & trash ---- */
+.revision-list { list-style: none; padding: 0; margin: 16px 0; }
+.revision-list li { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 12px 16px; border: 1px solid var(--border); border-radius: 12px; background: var(--bg-2); margin-bottom: 10px; }
+.revision-date { color: var(--muted); font-size: 0.88rem; }
+.revision-actions { display: flex; gap: 8px; align-items: center; }
+.revision-actions form { display: inline; }
+.article-actions { display: flex; gap: 8px; justify-content: flex-end; }
+
 @media (max-width: 640px) {
   .editor-meta { grid-template-columns: 1fr; }
   .hero { padding: 40px 0 30px; }

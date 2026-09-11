@@ -8,7 +8,7 @@ import fs from "node:fs";
 import { fileURLToPath } from "node:url";
 import { z } from "zod";
 
-import { listArticles, getArticle, saveArticle, deleteArticle, buildTree, slugify, invalidateCache } from "./lib/articles.js";
+import { listArticles, getArticle, saveArticle, deleteArticle, buildTree, slugify, invalidateCache, historySupported, trashSupported, articleRevisions, articleRevision, restoreRevision, listTrashItems, restoreTrashed, purgeTrashed } from "./lib/articles.js";
 import { renderMarkdown, extractExcerpt } from "./lib/render.js";
 import { searchArticles, highlight, matchExcerpt } from "./lib/search.js";
 import { ADAPTER, exportData, importData } from "./lib/storage.js";
@@ -487,6 +487,74 @@ app.get("/:slug/edit", async (req, res) => {
   res.send(layout(`Edit: ${article.title}`, body, treeHtml(tree)));
 });
 
+app.get("/:slug/history", async (req, res) => {
+  const tree = await buildTree();
+  const article = await getArticle(req.params.slug);
+  if (!article) return res.status(404).send(layout("Not found", `<div class="error"><h1>404</h1><p>Article not found.</p><a class="btn btn-primary" href="/">Go home</a></div>`, treeHtml(tree)));
+  const revisions = historySupported() ? await articleRevisions(article.slug) : [];
+  const body = `
+<section class="editor-wrap">
+  <div class="editor-toolbar"><a href="/${article.slug}" class="btn btn-ghost btn-sm">← Article</a><h2>History: ${escapeHtml(article.title)}</h2></div>
+  ${revisions.length ? `<ul class="revision-list">${revisions.map((r) => `<li>
+    <span class="revision-date">${new Date(r.at).toLocaleString()}</span>
+    <span class="revision-actions">
+      <a class="btn btn-ghost btn-sm" href="/${article.slug}/revision/${r.id}">View</a>
+      <form action="/api/articles/${article.slug}/revisions/${r.id}/restore" method="POST"><button class="btn btn-ghost btn-sm" type="submit">Restore</button></form>
+    </span>
+  </li>`).join("")}</ul>` : `<p class="empty">${historySupported() ? "No revisions yet — a revision is stored on each save." : "This storage adapter does not keep revisions."}</p>`}
+</section>`;
+  res.send(layout(`History: ${article.title}`, body, treeHtml(tree, article.slug)));
+});
+
+app.get("/:slug/revision/:id", async (req, res) => {
+  const tree = await buildTree();
+  const article = await getArticle(req.params.slug);
+  const revision = await articleRevision(req.params.slug, req.params.id);
+  if (!article || !revision) return res.status(404).send(layout("Not found", `<div class="error"><h1>404</h1><p>Revision not found.</p><a class="btn btn-primary" href="/">Go home</a></div>`, treeHtml(tree)));
+  const { html } = renderMarkdown(revision, { tree });
+  const body = `
+<article class="article">
+  <div class="article-meta"><span class="breadcrumb"><a href="/${article.slug}">${escapeHtml(article.title)}</a> / revision</span><span class="updated">${new Date(revision.at).toLocaleString()}</span></div>
+  <h1 class="article-title">${escapeHtml(revision.title)}</h1>
+  <div class="wiki-body">${html}</div>
+  <form action="/api/articles/${article.slug}/revisions/${revision.id}/restore" method="POST"><button class="btn btn-primary" type="submit">Restore this revision</button></form>
+</article>`;
+  res.send(layout(`Revision: ${revision.title}`, body, treeHtml(tree, article.slug)));
+});
+
+app.post("/api/articles/:slug/revisions/:id/restore", mutationLimiter, verifyCsrf, async (req, res) => {
+  const restored = await restoreRevision(req.params.slug, req.params.id);
+  if (!restored) return res.status(404).send("Revision not found");
+  res.redirect(`/${restored.slug}`);
+});
+
+app.get("/trash", async (req, res) => {
+  const tree = await buildTree();
+  const items = trashSupported() ? await listTrashItems() : [];
+  const body = `
+<section class="editor-wrap">
+  <div class="editor-toolbar"><h2>Trash</h2><a href="/data" class="btn btn-ghost btn-sm">← Data</a></div>
+  ${items.length ? `<ul class="revision-list">${items.map((t) => `<li>
+    <span class="revision-date">${escapeHtml(t.title)}<br><small>${t.slug} · ${new Date(t.at).toLocaleString()}</small></span>
+    <span class="revision-actions">
+      <form action="/api/trash/${encodeURIComponent(t.id)}/restore" method="POST"><button class="btn btn-ghost btn-sm" type="submit">Restore</button></form>
+      <form action="/api/trash/${encodeURIComponent(t.id)}/delete" method="POST"><button class="btn btn-danger btn-sm" type="submit">Delete forever</button></form>
+    </span>
+  </li>`).join("")}</ul>` : `<p class="empty">${trashSupported() ? "Trash is empty." : "This storage adapter does not support trash."}</p>`}
+</section>`;
+  res.send(layout("Trash", body, treeHtml(tree)));
+});
+
+app.post("/api/trash/:id/restore", mutationLimiter, verifyCsrf, async (req, res) => {
+  await restoreTrashed(req.params.id);
+  res.redirect("/trash");
+});
+
+app.post("/api/trash/:id/delete", mutationLimiter, verifyCsrf, async (req, res) => {
+  await purgeTrashed(req.params.id);
+  res.redirect("/trash");
+});
+
 app.get("/uploads", async (req, res) => {
   const tree = await buildTree();
   const all = fs.readdirSync(UPLOAD_DIR).filter((f) => !f.startsWith(".")).map((f) => {
@@ -641,6 +709,11 @@ app.get("/data", async (req, res) => {
         <button class="btn btn-primary btn-sm" type="submit">Import</button>
       </form>
     </div>
+    <div class="card">
+      <h3>🗑️ Trash</h3>
+      <p>Deleted articles are kept in the trash (files adapter) so you can restore them.</p>
+      <a href="/trash" class="btn btn-ghost btn-sm">Open trash</a>
+    </div>
   </div>
 
   <div class="storage-guide">
@@ -648,7 +721,7 @@ app.get("/data", async (req, res) => {
     <ol>
       <li><strong>Export</strong> your data (button above) to <code>backup.json</code>.</li>
       <li>In Supabase: open the SQL editor and run <code>supabase/schema.sql</code> to create the <code>articles</code> table.</li>
-      <li>Restart with <code>STORAGE_ADAPTER=supabase</code> plus <code>SUPABASE_URL</code> and <code>SUPABASE_ANON_KEY</code> env vars.</li>
+      <li>Restart with <code>STORAGE_ADAPTER=supabase</code> plus <code>SUPABASE_URL</code> and <code>SUPABASE_SERVICE_ROLE_KEY</code> (kept server-side).</li>
       <li>Hit <strong>Import</strong> to push your file into Supabase. Everything else works unchanged.</li>
       <li>On Vercel, install <code>@vercel/postgres</code>, run <code>vercel/schema.sql</code>, set <code>STORAGE_ADAPTER=vercel</code>, and connect your Postgres env.</li>
     </ol>
@@ -690,6 +763,7 @@ app.get("/:slug", async (req, res) => {
   </div>
   <div class="article-actions">
     <a href="/${article.slug}/edit" class="btn btn-ghost btn-sm">✏️ Edit</a>
+    ${historySupported() ? `<a href="/${article.slug}/history" class="btn btn-ghost btn-sm">🕘 History</a>` : ""}
   </div>
   <h1 class="article-title">${escapeHtml(article.title)}</h1>
   ${article.lead ? `<p class="lead">${escapeHtml(article.lead)}</p>` : ""}

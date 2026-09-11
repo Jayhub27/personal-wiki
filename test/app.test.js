@@ -136,3 +136,48 @@ test("sets security headers", async () => {
   assert.equal(res.headers.get("x-content-type-options"), "nosniff");
   assert.equal(res.headers.get("x-frame-options"), "SAMEORIGIN");
 });
+
+test("keeps revisions and restores a previous one", async () => {
+  const { saveArticle } = await import("../lib/articles.js");
+  await saveArticle({ existingSlug: "", meta: { title: "Versioned" }, content: "version one" });
+  await saveArticle({ existingSlug: "versioned", meta: { title: "Versioned" }, content: "version two" });
+  const hist = await fetch(`${base}/versioned/history`);
+  const histText = await hist.text();
+  assert.equal(hist.status, 200);
+  const revId = histText.match(/\/versioned\/revision\/(\d+)/)?.[1];
+  assert.ok(revId, "expected a revision link");
+  const rev = await fetch(`${base}/versioned/revision/${revId}`);
+  assert.match(await rev.text(), /version one/);
+  const restore = await fetch(`${base}/api/articles/versioned/revisions/${revId}/restore`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: cookie },
+    body: new URLSearchParams({ _csrf: csrf }),
+    redirect: "manual",
+  });
+  assert.equal(restore.status, 302);
+  assert.match(await (await fetch(`${base}/versioned`)).text(), /version one/);
+});
+
+test("moves deleted articles to trash and restores them", async () => {
+  const { saveArticle } = await import("../lib/articles.js");
+  await saveArticle({ existingSlug: "", meta: { title: "Trash Me" }, content: "gone soon" });
+  const del = await fetch(`${base}/api/articles/trash-me/delete`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: cookie },
+    body: new URLSearchParams({ _csrf: csrf }),
+    redirect: "manual",
+  });
+  assert.equal(del.status, 302);
+  const trash = await (await fetch(`${base}/trash`)).text();
+  assert.match(trash, /Trash Me/);
+  const id = trash.match(/\/api\/trash\/([^/]+)\/restore/)?.[1];
+  assert.ok(id, "expected a trash restore link");
+  const restore = await fetch(`${base}/api/trash/${id}/restore`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: cookie },
+    body: new URLSearchParams({ _csrf: csrf }),
+    redirect: "manual",
+  });
+  assert.equal(restore.status, 302);
+  assert.match(await (await fetch(`${base}/trash-me`)).text(), /gone soon/);
+});
