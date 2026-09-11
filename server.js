@@ -1,8 +1,12 @@
 import express from "express";
 import multer from "multer";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
+import crypto from "node:crypto";
 import path from "node:path";
 import fs from "node:fs";
 import { fileURLToPath } from "node:url";
+import { z } from "zod";
 
 import { listArticles, getArticle, saveArticle, deleteArticle, buildTree, slugify } from "./lib/articles.js";
 import { renderMarkdown, extractExcerpt } from "./lib/render.js";
@@ -17,12 +21,100 @@ fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 
 const app = express();
 const PORT = process.env.PORT || 3210;
+app.set("trust proxy", 1);
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
+      fontSrc: ["'self'", "https://fonts.gstatic.com", "data:"],
+      imgSrc: ["'self'", "data:", "blob:"],
+      mediaSrc: ["'self'", "blob:"],
+      connectSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      baseUri: ["'self'"],
+      frameAncestors: ["'none'"],
+    },
+  },
+  crossOriginEmbedderPolicy: false,
+}));
+
+const globalLimiter = rateLimit({ windowMs: 60_000, limit: 300, standardHeaders: "draft-7", legacyHeaders: false });
+const mutationLimiter = rateLimit({ windowMs: 60_000, limit: 40, standardHeaders: "draft-7", legacyHeaders: false });
+const uploadLimiter = rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: "draft-7", legacyHeaders: false });
+app.use(globalLimiter);
+
+app.use(express.json({ limit: "2mb" }));
+app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 app.use("/uploads", express.static(UPLOAD_DIR));
 app.use(express.static(path.join(__dirname, "public")));
 app.use("/vendor", express.static(path.join(__dirname, "node_modules", "three", "build")));
+
+const CSRF_COOKIE = "aetherwiki_csrf";
+const parseCookies = (header = "") => {
+  const out = {};
+  String(header).split(";").forEach((part) => {
+    const i = part.indexOf("=");
+    if (i > -1) out[part.slice(0, i).trim()] = decodeURIComponent(part.slice(i + 1).trim());
+  });
+  return out;
+};
+
+app.use((req, res, next) => {
+  const cookies = parseCookies(req.headers.cookie);
+  let token = cookies[CSRF_COOKIE];
+  if (!token || token.length < 32) {
+    token = crypto.randomBytes(24).toString("hex");
+    res.cookie(CSRF_COOKIE, token, {
+      httpOnly: false,
+      sameSite: "lax",
+      path: "/",
+      secure: req.secure,
+      maxAge: 1000 * 60 * 60 * 24 * 30,
+    });
+  }
+  res.locals.csrf = token;
+  next();
+});
+
+function verifyCsrf(req, res, next) {
+  if (["GET", "HEAD", "OPTIONS"].includes(req.method)) return next();
+  const token = parseCookies(req.headers.cookie)[CSRF_COOKIE];
+  const sent = (req.body && req.body._csrf) || req.get("x-csrf-token") || "";
+  if (!token || !sent || sent.length !== token.length || !crypto.timingSafeEqual(Buffer.from(sent), Buffer.from(token))) {
+    return res.status(403).send("Invalid or missing CSRF token");
+  }
+  next();
+}
+
+const articleSchema = z.object({
+  slug: z.string().trim().max(200).optional().default(""),
+  title: z.string().trim().min(1).max(300),
+  parent: z.string().trim().max(200).optional().default(""),
+  tags: z.string().max(2000).optional().default(""),
+  reference: z.string().trim().max(2000).optional().default(""),
+  referenceLabel: z.string().trim().max(300).optional().default(""),
+  content: z.string().max(5_000_000).optional().default(""),
+});
+
+const branchSchema = z.object({
+  title: z.string().trim().min(1).max(300),
+  parent: z.string().trim().max(200).optional().default(""),
+});
+
+const importRowSchema = z.object({ title: z.string().optional(), slug: z.string().optional() }).passthrough()
+  .refine((r) => r.title || r.slug, { message: "each article needs a title or slug" });
+const importSchema = z.union([
+  z.array(importRowSchema).max(10_000),
+  z.object({ articles: z.array(importRowSchema).max(10_000) }),
+]);
+
+function firstIssue(error) {
+  const issue = error.issues?.[0];
+  return issue ? `${issue.path.join(".") || "input"}: ${issue.message}` : "Invalid input";
+}
 
 const upload = multer({
   storage: multer.diskStorage({
@@ -48,14 +140,7 @@ const layout = (title, body, active = "", meta = {}) => `<!doctype html>
 <meta name="twitter:card" content="summary" />
 <link rel="stylesheet" href="/style.css" />
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>✦</text></svg>" />
-<script>
-try {
-  var t = localStorage.getItem("aetherwiki-theme");
-  if (!t) t = matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
-  document.documentElement.dataset.theme = t;
-  if (localStorage.getItem("aetherwiki-bg") === "off") document.documentElement.dataset.bg = "off";
-} catch (e) {}
-</script>
+<script src="/theme-init.js"></script>
 </head>
 <body>
 <canvas id="bg-canvas" aria-hidden="true"></canvas>
@@ -90,7 +175,6 @@ try {
 ${body}
 </main>
 <script src="/app.js"></script>
-<script src="/vendor/three.module.js"></script>
 <script type="module" src="/background.js"></script>
 </body>
 </html>`;
@@ -481,21 +565,22 @@ ${allTags.length ? `<section class="all-tags"><h2>All tags</h2>${allTags.map((t)
   res.send(layout(article.title, body, treeHtml(tree, slug), { description: extractExcerpt(article) || article.title }));
 });
 
-app.post("/api/upload", upload.array("files"), (req, res) => {
+app.post("/api/upload", uploadLimiter, upload.array("files"), verifyCsrf, (req, res) => {
   if (!req.files || !req.files.length) return res.redirect("/uploads?error=none");
   res.redirect("/uploads?ok=" + req.files.length);
 });
 
-app.post("/api/articles", async (req, res) => {
-  const { slug: existingSlug, title, parent, tags, reference, referenceLabel, content } = req.body;
-  if (!title || !String(title).trim()) return res.status(400).send("Title is required");
+app.post("/api/articles", mutationLimiter, verifyCsrf, async (req, res) => {
+  const parsed = articleSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).send("Invalid article: " + firstIssue(parsed.error));
+  const { slug: existingSlug, title, parent, tags, reference, referenceLabel, content } = parsed.data;
   const trimmed = String(content || "").trim().replace(/^\n+/, "").trimStart();
-  const meta = { title: String(title).trim(), parent: parent || "", tags, reference: safeUrl(reference), referenceLabel: referenceLabel || "" };
+  const meta = { title, parent, tags, reference: safeUrl(reference), referenceLabel };
   const article = await saveArticle({ existingSlug, meta, content: trimmed });
   res.redirect(`/${article.slug}`);
 });
 
-app.post("/api/articles/:slug/delete", async (req, res) => {
+app.post("/api/articles/:slug/delete", mutationLimiter, verifyCsrf, async (req, res) => {
   const kids = (await listArticles()).filter((a) => a.parent === req.params.slug);
   if (kids.length) return res.status(400).send("Cannot delete: it has sub-articles. Remove or re-parent them first.");
   await deleteArticle(req.params.slug);
@@ -508,10 +593,11 @@ app.get("/api/search", async (req, res) => {
   res.json((await listArticles()).filter((a) => a.title.toLowerCase().includes(q)).slice(0, 8).map((a) => ({ title: a.title, slug: a.slug })));
 });
 
-app.post("/api/branch", async (req, res) => {
-  const { title, parent } = req.body;
-  if (!title || !String(title).trim()) return res.status(400).json({ error: "Title is required" });
-  const article = await saveArticle({ existingSlug: "", meta: { title: String(title).trim(), parent: parent || "" }, content: "" });
+app.post("/api/branch", mutationLimiter, verifyCsrf, async (req, res) => {
+  const parsed = branchSchema.safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ error: "Invalid branch: " + firstIssue(parsed.error) });
+  const { title, parent } = parsed.data;
+  const article = await saveArticle({ existingSlug: "", meta: { title, parent }, content: "" });
   res.redirect(`/${article.slug}/edit`);
 });
 
@@ -523,11 +609,13 @@ app.get("/api/export", async (req, res) => {
 });
 
 const bundleUpload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 50 * 1024 * 1024 } });
-app.post("/api/import", bundleUpload.single("bundle"), async (req, res) => {
+app.post("/api/import", uploadLimiter, bundleUpload.single("bundle"), verifyCsrf, async (req, res) => {
   try {
     if (!req.file) return res.status(400).send("Please upload a JSON bundle file.");
-    const parsed = JSON.parse(req.file.buffer.toString("utf8"));
-    const slugs = await importData(parsed);
+    const raw = JSON.parse(req.file.buffer.toString("utf8"));
+    const parsed = importSchema.safeParse(raw);
+    if (!parsed.success) return res.status(400).send("Invalid import bundle: " + firstIssue(parsed.error));
+    const slugs = await importData(parsed.data);
     res.redirect(`/data?imported=${slugs.length}`);
   } catch (err) {
     res.status(400).send("Import failed: " + err.message);

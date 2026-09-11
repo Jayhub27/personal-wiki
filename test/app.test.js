@@ -12,6 +12,8 @@ const { saveArticle, getArticle } = await import("../lib/articles.js");
 
 let server;
 let base;
+let csrf = "";
+let cookie = "";
 
 before(async () => {
   await saveArticle({
@@ -25,9 +27,20 @@ before(async () => {
     content: "Unsafe reference body.",
   });
   await saveArticle({ existingSlug: "", meta: { title: "Linker" }, content: "See [[Hello World]] and [[Missing Page]]." });
+  await saveArticle({
+    existingSlug: "",
+    meta: { title: "XSS" },
+    content: 'Safe text first line.\n\n<script>alert(1)</script><img src="x" onerror="alert(2)">Safe text',
+  });
   server = app.listen(0);
   await new Promise((resolve) => server.once("listening", resolve));
   base = `http://127.0.0.1:${server.address().port}`;
+
+  const res = await fetch(`${base}/`);
+  const rawCookie = res.headers.getSetCookie ? res.headers.getSetCookie().join("; ") : res.headers.get("set-cookie") || "";
+  const csrfMatch = rawCookie.match(/aetherwiki_csrf=([^;]+)/);
+  csrf = csrfMatch ? csrfMatch[1] : "";
+  cookie = csrf ? `aetherwiki_csrf=${csrf}` : "";
 });
 
 after(() => server.close());
@@ -87,12 +100,39 @@ test("finds articles by tag", async () => {
 test("creates a root branch via /api/branch", async () => {
   const res = await fetch(`${base}/api/branch`, {
     method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: new URLSearchParams({ title: "Root Branch", parent: "" }),
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: cookie },
+    body: new URLSearchParams({ title: "Root Branch", parent: "", _csrf: csrf }),
     redirect: "manual",
   });
   assert.equal(res.status, 302);
   const created = await getArticle("root-branch");
   assert.ok(created);
   assert.equal(created.title, "Root Branch");
+});
+
+test("rejects mutations without a CSRF token", async () => {
+  const res = await fetch(`${base}/api/branch`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({ title: "No Token", parent: "" }),
+    redirect: "manual",
+  });
+  assert.equal(res.status, 403);
+  assert.equal(await getArticle("no-token"), null);
+});
+
+test("sanitizes embedded HTML", async () => {
+  const res = await fetch(`${base}/xss`);
+  const text = await res.text();
+  assert.equal(res.status, 200);
+  assert.doesNotMatch(text, /<script>alert/);
+  assert.doesNotMatch(text, /onerror=/);
+  assert.match(text, /Safe text/);
+});
+
+test("sets security headers", async () => {
+  const res = await fetch(`${base}/`);
+  assert.ok(res.headers.get("content-security-policy"));
+  assert.equal(res.headers.get("x-content-type-options"), "nosniff");
+  assert.equal(res.headers.get("x-frame-options"), "SAMEORIGIN");
 });

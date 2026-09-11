@@ -1,4 +1,17 @@
 (() => {
+  const csrfToken = () => (document.cookie.match(/(?:^|; )aetherwiki_csrf=([^;]+)/) || [])[1] || "";
+  document.addEventListener("submit", (e) => {
+    const form = e.target;
+    if (!(form instanceof HTMLFormElement) || form.method.toLowerCase() === "get") return;
+    if (!form.querySelector('input[name="_csrf"]')) {
+      const input = document.createElement("input");
+      input.type = "hidden";
+      input.name = "_csrf";
+      input.value = csrfToken();
+      form.appendChild(input);
+    }
+  }, true);
+
   const themeBtn = document.getElementById("theme-btn");
   const applyTheme = (theme) => {
     document.documentElement.dataset.theme = theme;
@@ -121,6 +134,11 @@
       const f = document.createElement("form");
       f.method = "POST";
       f.action = "/api/articles/" + b.dataset.delete + "/delete";
+      const token = document.createElement("input");
+      token.type = "hidden";
+      token.name = "_csrf";
+      token.value = csrfToken();
+      f.appendChild(token);
       document.body.appendChild(f);
       f.submit();
     });
