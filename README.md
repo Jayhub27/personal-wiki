@@ -57,6 +57,16 @@ node scripts/hash-password.mjs 'your password'    # prints a sha256 hash
 AUTH_PASSWORD_HASH=<hash> SESSION_SECRET=<long-random-string> npm start
 ```
 
+Multiple accounts sharing one wiki (JSON of username → sha256 hash):
+
+```bash
+AUTH_USERS='{"alice":"<hash>","bob":"<hash>"}' SESSION_SECRET=... npm start
+```
+
+## 📡 Feeds
+
+`/rss.xml` and `/sitemap.xml` are available (behind auth when login is enabled).
+
 ## 💾 Storage — Supabase or Vercel
 
 The wiki ships with an adapter layer (`lib/storage.js`) so you can back it with local files

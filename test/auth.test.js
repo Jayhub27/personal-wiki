@@ -1,13 +1,16 @@
 import { test, before, after } from "node:test";
 import assert from "node:assert/strict";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 
 process.env.CONTENT_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "aetherwiki-auth-"));
 process.env.STORAGE_ADAPTER = "files";
+process.env.QUIET = "true";
 process.env.AUTH_USERNAME = "admin";
 process.env.AUTH_PASSWORD = "hunter2";
+process.env.AUTH_USERS = JSON.stringify({ bob: crypto.createHash("sha256").update("bobpass").digest("hex") });
 process.env.SESSION_SECRET = "test-session-secret";
 
 const app = (await import("../server.js")).default;
@@ -74,4 +77,15 @@ test("logs in and serves protected pages", async () => {
   const page = await fetch(`${base}/secret-page`, { headers: { Cookie: `aetherwiki_session=${session}` } });
   assert.equal(page.status, 200);
   assert.match(await page.text(), /classified/);
+});
+
+test("supports multiple accounts", async () => {
+  const token = await getCsrf();
+  const res = await fetch(`${base}/login`, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded", Cookie: `aetherwiki_csrf=${token}` },
+    body: new URLSearchParams({ username: "bob", password: "bobpass", _csrf: token }),
+    redirect: "manual",
+  });
+  assert.equal(res.status, 302);
 });

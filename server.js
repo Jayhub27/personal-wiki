@@ -51,6 +51,13 @@ const mutationLimiter = rateLimit({ windowMs: 60_000, limit: 40, standardHeaders
 const uploadLimiter = rateLimit({ windowMs: 60_000, limit: 20, standardHeaders: "draft-7", legacyHeaders: false });
 app.use(globalLimiter);
 
+app.use((req, res, next) => {
+  if (process.env.QUIET === "true") return next();
+  const start = Date.now();
+  res.on("finish", () => console.log(`${req.method} ${req.originalUrl} ${res.statusCode} ${Date.now() - start}ms`));
+  next();
+});
+
 app.use(express.json({ limit: "2mb" }));
 app.use(express.urlencoded({ extended: true, limit: "2mb" }));
 
@@ -81,17 +88,32 @@ app.use((req, res, next) => {
   next();
 });
 
-const AUTH_ENABLED = !!(process.env.AUTH_PASSWORD || process.env.AUTH_PASSWORD_HASH);
-const AUTH_USER = process.env.AUTH_USERNAME || "admin";
 const SESSION_COOKIE = "aetherwiki_session";
 const SESSION_TTL = 1000 * 60 * 60 * 24 * 30;
+
+const sha256hex = (value) => crypto.createHash("sha256").update(String(value)).digest("hex");
+
+function parseUsers() {
+  const users = new Map();
+  const singleHash = process.env.AUTH_PASSWORD_HASH || (process.env.AUTH_PASSWORD ? sha256hex(process.env.AUTH_PASSWORD) : "");
+  if (singleHash) users.set(process.env.AUTH_USERNAME || "admin", singleHash);
+  if (process.env.AUTH_USERS) {
+    try {
+      const parsed = JSON.parse(process.env.AUTH_USERS);
+      for (const [name, hash] of Object.entries(parsed)) users.set(String(name), String(hash));
+    } catch {
+      console.warn('[aetherwiki] AUTH_USERS must be JSON like {"alice":"<sha256>"}; ignoring it.');
+    }
+  }
+  return users;
+}
+
+const USERS = parseUsers();
+const AUTH_ENABLED = USERS.size > 0;
 const SESSION_SECRET = process.env.SESSION_SECRET || (AUTH_ENABLED ? crypto.randomBytes(32).toString("hex") : "");
 if (AUTH_ENABLED && !process.env.SESSION_SECRET) {
   console.warn("[aetherwiki] AUTH is enabled without SESSION_SECRET — a random secret is used and sessions reset on restart.");
 }
-
-const sha256hex = (value) => crypto.createHash("sha256").update(String(value)).digest("hex");
-const PASSWORD_HASH = process.env.AUTH_PASSWORD_HASH || (process.env.AUTH_PASSWORD ? sha256hex(process.env.AUTH_PASSWORD) : "");
 
 function safeEqual(a, b) {
   const bufA = Buffer.from(String(a));
@@ -126,7 +148,9 @@ function isAuthed(req) {
 }
 
 function checkCredentials(username, password) {
-  return safeEqual(username || "", AUTH_USER) && safeEqual(sha256hex(password || ""), PASSWORD_HASH);
+  const hash = USERS.get(String(username || ""));
+  if (!hash) return false;
+  return safeEqual(sha256hex(password || ""), hash);
 }
 
 function safeNext(value) {
@@ -334,7 +358,7 @@ app.post("/login", verifyCsrf, (req, res) => {
   if (!checkCredentials(username, password)) {
     return res.status(401).send(layout("Sign in failed", `<div class="login-wrap"><div class="toast toast-error">Invalid username or password.</div><a class="btn btn-primary" href="/login">Try again</a></div>`, "", { bare: true }));
   }
-  res.cookie(SESSION_COOKIE, signSession({ user: AUTH_USER, exp: Date.now() + SESSION_TTL }), {
+  res.cookie(SESSION_COOKIE, signSession({ user: String(username || "user"), exp: Date.now() + SESSION_TTL }), {
     httpOnly: true, sameSite: "lax", path: "/", secure: req.secure, maxAge: SESSION_TTL,
   });
   res.redirect(next);
@@ -790,6 +814,30 @@ app.get("/health", (req, res) => {
   res.json({ status: "ok", adapter: ADAPTER, uptime: Math.round(process.uptime()) });
 });
 
+function siteBase(req) {
+  const proto = req.get("x-forwarded-proto") || req.protocol;
+  return `${proto}://${req.get("host")}`;
+}
+
+function xmlEscape(s) {
+  return String(s ?? "").replace(/[<>&'"]/g, (c) => ({ "<": "&lt;", ">": "&gt;", "&": "&amp;", "'": "&apos;", '"': "&quot;" }[c]));
+}
+
+app.get("/rss.xml", async (req, res) => {
+  const base = siteBase(req);
+  const articles = (await listArticles())
+    .sort((a, b) => (b.updated || b.created || "").localeCompare(a.updated || a.created || ""))
+    .slice(0, 20);
+  const items = articles.map((a) => `<item><title>${xmlEscape(a.title)}</title><link>${base}/${a.slug}</link><guid>${base}/${a.slug}</guid><description>${xmlEscape(extractExcerpt(a))}</description><pubDate>${new Date(a.updated || a.created || Date.now()).toUTCString()}</pubDate></item>`).join("");
+  res.type("application/rss+xml").send(`<?xml version="1.0" encoding="UTF-8"?><rss version="2.0"><channel><title>Aetherwiki</title><link>${base}</link><description>A personal wiki</description>${items}</channel></rss>`);
+});
+
+app.get("/sitemap.xml", async (req, res) => {
+  const base = siteBase(req);
+  const urls = (await listArticles()).map((a) => `<url><loc>${base}/${a.slug}</loc><lastmod>${(a.updated || a.created || "").slice(0, 10)}</lastmod></url>`).join("");
+  res.type("application/xml").send(`<?xml version="1.0" encoding="UTF-8"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">${urls}</urlset>`);
+});
+
 app.get("/:slug", async (req, res) => {
   const slug = req.params.slug;
   const tree = await buildTree();
@@ -922,6 +970,13 @@ app.post("/api/import", uploadLimiter, uploadBundle, verifyCsrf, async (req, res
 });
 
 app.use(async (req, res) => res.status(404).send(layout("Not found", `<div class="error"><h1>404</h1><p>Nothing here.</p><a class="btn btn-primary" href="/">Go home</a></div>`, treeHtml(await buildTree()))));
+
+app.use((err, req, res, next) => {
+  console.error("[aetherwiki] error:", err);
+  if (res.headersSent) return next(err);
+  if (req.path.startsWith("/api/")) return res.status(500).json({ error: "Internal server error" });
+  return res.status(500).send(layout("Error", `<div class="error"><h1>500</h1><p>Something went wrong.</p><a class="btn btn-primary" href="/">Go home</a></div>`, ""));
+});
 
 const isMain = process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
 if (isMain) {

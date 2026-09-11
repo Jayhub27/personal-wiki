@@ -7,6 +7,7 @@ import path from "node:path";
 process.env.CONTENT_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "aetherwiki-"));
 process.env.UPLOAD_DIR = fs.mkdtempSync(path.join(os.tmpdir(), "aetherwiki-media-"));
 process.env.STORAGE_ADAPTER = "files";
+process.env.QUIET = "true";
 
 const app = (await import("../server.js")).default;
 const { saveArticle, getArticle } = await import("../lib/articles.js");
@@ -233,6 +234,16 @@ test("renders the ask page and reports AI as unconfigured", async () => {
   });
   assert.equal(api.status, 200);
   assert.equal((await api.json()).configured, false);
+});
+
+test("serves RSS and sitemap", async () => {
+  const rss = await fetch(`${base}/rss.xml`);
+  assert.equal(rss.status, 200);
+  assert.match(rss.headers.get("content-type"), /xml/);
+  assert.match(await rss.text(), /<rss/);
+  const sitemap = await fetch(`${base}/sitemap.xml`);
+  assert.equal(sitemap.status, 200);
+  assert.match(await sitemap.text(), /urlset/);
 });
 
 test("moves deleted articles to trash and restores them", async () => {  const { saveArticle } = await import("../lib/articles.js");
