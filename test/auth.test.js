@@ -69,8 +69,8 @@ test("logs in and serves protected pages", async () => {
     body: new URLSearchParams({ username: "admin", password: "hunter2", _csrf: token, next: "/secret-page" }),
     redirect: "manual",
   });
-  assert.equal(res.status, 302);
-  assert.equal(res.headers.get("location"), "/secret-page");
+  assert.equal(res.status, 200);
+  assert.match(await res.text(), /url=\/secret-page/);
   const raw = res.headers.getSetCookie ? res.headers.getSetCookie().join("; ") : res.headers.get("set-cookie") || "";
   const session = raw.match(/aetherwiki_session=([^;]+)/)?.[1];
   assert.ok(session);
@@ -87,5 +87,5 @@ test("supports multiple accounts", async () => {
     body: new URLSearchParams({ username: "bob", password: "bobpass", _csrf: token }),
     redirect: "manual",
   });
-  assert.equal(res.status, 302);
+  assert.equal(res.status, 200);
 });

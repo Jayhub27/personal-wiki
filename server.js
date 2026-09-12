@@ -334,8 +334,12 @@ function toDate(iso) {
   return d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "numeric" });
 }
 
-app.get("/login", (req, res) => {
-  if (AUTH_ENABLED && isAuthed(req)) return res.redirect(safeNext(req.query.next));
+function transition(res, target, message) {
+  const safe = safeNext(target);
+  return res.status(200).type("html").send(layout("Redirecting", `<meta http-equiv="refresh" content="0; url=${escapeHtml(safe)}" /><div class="login-wrap"><p class="login-sub">${escapeHtml(message)}</p><a class="btn btn-primary" href="${escapeHtml(safe)}">Continue</a></div>`, "", { bare: true }));
+}
+
+app.get("/login", (req, res) => {  if (AUTH_ENABLED && isAuthed(req)) return res.redirect(safeNext(req.query.next));
   const error = req.query.error ? `<div class="toast toast-error">${escapeHtml(req.query.error)}</div>` : "";
   const body = `
 <section class="login-wrap">
@@ -361,12 +365,12 @@ app.post("/login", verifyCsrf, (req, res) => {
   res.cookie(SESSION_COOKIE, signSession({ user: String(username || "user"), exp: Date.now() + SESSION_TTL }), {
     httpOnly: true, sameSite: "lax", path: "/", secure: req.secure, maxAge: SESSION_TTL,
   });
-  res.redirect(next);
+  return transition(res, next, "Signed in — redirecting…");
 });
 
 app.post("/logout", verifyCsrf, (req, res) => {
   res.clearCookie(SESSION_COOKIE, { path: "/" });
-  res.redirect("/login");
+  return transition(res, "/login", "Signed out — redirecting…");
 });
 
 app.get("/", async (req, res) => {
